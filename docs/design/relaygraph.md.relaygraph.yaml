@@ -1,0 +1,34 @@
+schemaVersion: 1
+id: docs.design.relaygraph
+kind: feature-root
+links:
+  - rel: decomposes-to
+    to: path:docs/features/cli.md
+    order: 10
+  - rel: decomposes-to
+    to: path:docs/features/graph-build.md
+    order: 20
+  - rel: decomposes-to
+    to: path:docs/features/cache.md
+    order: 30
+  - rel: decomposes-to
+    to: path:docs/features/export-trace.md
+    order: 40
+  - rel: decomposes-to
+    to: path:docs/features/init.md
+    order: 50
+  - rel: realized-by
+    to: path:src/lib.rs
+    order: 60
+  - rel: realized-by
+    to: path:docs/schema/sidecar.schema.json
+    order: 70
+  - rel: realized-by
+    to: path:docs/schema/plugin.schema.json
+    order: 80
+  - rel: realized-by
+    to: path:docs/schema/export.schema.json
+    order: 90
+  - rel: realized-by
+    to: path:docs/schema/cache-schema.sql
+    order: 100

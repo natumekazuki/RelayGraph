@@ -1,0 +1,13 @@
+schemaVersion: 1
+id: docs.features.cli
+kind: module
+links:
+  - rel: realized-by
+    to: path:src/main.rs
+    order: 10
+  - rel: realized-by
+    to: path:src/cli.rs
+    order: 20
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 30

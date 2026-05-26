@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relaygraph.local/schema/export.schema.json",
+  "title": "RelayGraph Export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resources", "diagnostics", "plugins"],
+  "properties": {
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "id", "kind", "sidecar", "metadata", "links", "incomingLinks"],
+        "properties": {
+          "path": { "type": "string" },
+          "id": { "type": ["string", "null"] },
+          "kind": { "type": ["string", "null"] },
+          "sidecar": { "type": ["string", "null"] },
+          "metadata": { "type": "object" },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/link" }
+          },
+          "incomingLinks": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/incomingLink" }
+          }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "traversal"],
+        "properties": {
+          "name": { "type": "string" },
+          "traversal": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "startKinds": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "relationOrder": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rel", "to", "targetPath", "targetId", "order"],
+      "properties": {
+        "rel": { "type": "string" },
+        "to": { "type": "string" },
+        "targetPath": { "type": ["string", "null"] },
+        "targetId": { "type": ["string", "null"] },
+        "order": { "type": ["integer", "null"] }
+      }
+    },
+    "incomingLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromPath", "fromId", "rel", "order"],
+      "properties": {
+        "fromPath": { "type": "string" },
+        "fromId": { "type": ["string", "null"] },
+        "rel": { "type": "string" },
+        "order": { "type": ["integer", "null"] }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "path": { "type": ["string", "null"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

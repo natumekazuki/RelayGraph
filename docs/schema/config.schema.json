@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relaygraph.local/schema/config.schema.json",
+  "title": "RelayGraph Config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "useGitIgnore": {
+      "type": "boolean"
+    },
+    "sidecarSuffix": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*[<>:\\\"/\\\\|?*])(?!.*\\.\\.)(?!.*[.\\s]$).*\\S.*$"
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?![A-Za-z]:)(?![\\\\/])(?!.*(^|[\\\\/])\\.\\.([\\\\/]|$)).*\\S.*$"
+      },
+      "default": ["relaygraph/plugins/feature-trace.yaml"]
+    },
+    "exclude": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "default": ["._relaygraph/**"]
+    },
+    "requireSidecar": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "default": []
+    }
+  }
+}

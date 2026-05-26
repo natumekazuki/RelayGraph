@@ -1,0 +1,10 @@
+schemaVersion: 1
+id: docs.features.init
+kind: module
+links:
+  - rel: realized-by
+    to: path:src/init.rs
+    order: 10
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 20

@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: docs.features.cache
+kind: module
+links:
+  - rel: realized-by
+    to: path:src/cache.rs
+    order: 10
+  - rel: realized-by
+    to: path:docs/schema/cache-schema.sql
+    order: 20
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 30
+  - rel: verified-by
+    to: path:tests/schema_contract.rs
+    order: 40

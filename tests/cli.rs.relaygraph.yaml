@@ -1,0 +1,4 @@
+schemaVersion: 1
+id: tests.cli
+kind: test
+links: []

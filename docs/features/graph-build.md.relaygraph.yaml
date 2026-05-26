@@ -1,0 +1,31 @@
+schemaVersion: 1
+id: docs.features.graph-build
+kind: module
+links:
+  - rel: realized-by
+    to: path:src/graph.rs
+    order: 10
+  - rel: realized-by
+    to: path:src/config.rs
+    order: 20
+  - rel: realized-by
+    to: path:src/repo.rs
+    order: 30
+  - rel: realized-by
+    to: path:src/plugin.rs
+    order: 40
+  - rel: realized-by
+    to: path:src/model.rs
+    order: 50
+  - rel: realized-by
+    to: path:src/locator.rs
+    order: 60
+  - rel: realized-by
+    to: path:src/diagnostic.rs
+    order: 70
+  - rel: realized-by
+    to: path:src/util.rs
+    order: 80
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 90

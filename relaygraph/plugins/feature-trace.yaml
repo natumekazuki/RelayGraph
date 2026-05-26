@@ -1,0 +1,36 @@
+schemaVersion: 1
+name: feature-trace
+resourceKinds:
+  - feature-root
+  - design-doc
+  - module
+  - source
+  - test
+relations:
+  - decomposes-to
+  - realized-by
+  - verified-by
+rules:
+  - when: feature-root
+    requireAnyOutgoing:
+      - decomposes-to
+      - realized-by
+    requireReachableKinds:
+      - design-doc
+      - module
+      - source
+      - test
+  - when: module
+    requireAnyOutgoing:
+      - realized-by
+      - verified-by
+    requireReachableKinds:
+      - source
+      - test
+traversal:
+  startKinds:
+    - feature-root
+  relationOrder:
+    - decomposes-to
+    - realized-by
+    - verified-by

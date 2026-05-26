@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: readme
+kind: design-doc
+links:
+  - rel: realized-by
+    to: path:docs/design/relaygraph.md
+    order: 10
+  - rel: realized-by
+    to: path:docs/features/cli.md
+    order: 15
+  - rel: realized-by
+    to: path:docs/install.md
+    order: 20
+  - rel: realized-by
+    to: path:docs/plugins.md
+    order: 30

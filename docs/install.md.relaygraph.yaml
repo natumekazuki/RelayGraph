@@ -1,0 +1,10 @@
+schemaVersion: 1
+id: docs.install
+kind: design-doc
+links:
+  - rel: realized-by
+    to: path:.github/workflows/ci.yml
+    order: 10
+  - rel: realized-by
+    to: path:.github/workflows/release.yml
+    order: 20

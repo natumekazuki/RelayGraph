@@ -1,0 +1,22 @@
+schemaVersion: 1
+id: docs.features.export-trace
+kind: module
+links:
+  - rel: realized-by
+    to: path:src/export.rs
+    order: 10
+  - rel: realized-by
+    to: path:src/trace.rs
+    order: 20
+  - rel: realized-by
+    to: path:src/cache.rs
+    order: 30
+  - rel: realized-by
+    to: path:docs/schema/export.schema.json
+    order: 40
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 50
+  - rel: verified-by
+    to: path:tests/schema_contract.rs
+    order: 60
