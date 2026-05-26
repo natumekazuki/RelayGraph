@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::locator::parse_locator;
 use crate::model::{Direction, Locator, Plugin, Resource};
 use crate::plugin::build_relation_rank;
-use crate::util::normalize_repo_path;
+use crate::util::normalize_repo_path_strict;
 
 struct TraceEdge {
     target_path: String,
@@ -43,7 +43,7 @@ pub fn trace_from(
             .map(str::to_string)
             .with_context(|| format!("unknown start id: {id}"))?,
         Locator::Path(path) => {
-            let path = normalize_repo_path(path);
+            let path = normalize_repo_path_strict(&path).map_err(anyhow::Error::msg)?;
             if !by_path.contains_key(path.as_str()) {
                 anyhow::bail!("unknown start path: {path}");
             }

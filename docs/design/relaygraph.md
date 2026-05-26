@@ -29,6 +29,8 @@ The source of truth is:
 - `*.relaygraph.yaml`
 - YAML plugins such as `relaygraph/plugins/feature-trace.yaml`
 
+When `useGitIgnore` is true, the root config must also be visible to Git-backed discovery. Ignored `.relaygraph.yaml` files are rejected.
+
 Generated files are not source of truth:
 
 - `._relaygraph/generated/relaygraph.json`
@@ -55,6 +57,8 @@ Sidecar schema version 1 supports:
 
 Links are written in one direction. Reverse links are generated for export and trace.
 
+`path:` locators are repository-relative. Current-directory components are folded, while parent traversal and absolute paths are schema errors.
+
 ## Deterministic Traversal
 
 Traversal order is deterministic:
@@ -78,7 +82,7 @@ Plugins define:
 - required reachable resource kinds
 - traversal roots and relation order
 
-The bundled plugin is `feature-trace`. It is embedded in the binary for the default path `relaygraph/plugins/feature-trace.yaml`; custom plugins are loaded only from repo-relative paths inside the repository root.
+The bundled plugin is `feature-trace`. It is embedded in the binary for the default path `relaygraph/plugins/feature-trace.yaml`; custom plugins are loaded only from repo-relative paths inside the repository root and Git-backed discovery.
 
 ## SQLite Cache
 
@@ -99,7 +103,7 @@ Default path:
 ._relaygraph/cache/relaygraph.sqlite
 ```
 
-The cache has `metadata.cacheSchemaVersion = 1`. Read commands reject missing, stale, or corrupt caches and ask the user to rebuild.
+The cache has `metadata.cacheSchemaVersion = 1` and SQLite `PRAGMA user_version = 1`. Read commands verify integrity, required tables, required columns, required indexes, foreign keys, and version metadata. Missing, stale, incomplete, or corrupt caches are rejected with rebuild guidance.
 
 ## CLI Surface
 

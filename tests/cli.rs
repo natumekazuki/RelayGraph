@@ -195,6 +195,26 @@ fn cache_trace_matches_relation_order_used_by_trace() {
 }
 
 #[test]
+fn trace_rejects_parent_traversal_start_locator() {
+    let root = temp_root("relaygraph-trace-parent-start");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("target.md"), "# Target\n").unwrap();
+
+    let output = run(&root, ["trace", "path:../target.md"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("parent traversal"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn trace_and_cache_trace_tie_break_by_target_locator() {
     let root = temp_root("relaygraph-target-locator-order");
     create_target_locator_order_fixture_repo(&root);
@@ -556,6 +576,71 @@ fn explicit_outputs_refuse_to_overwrite_declarations_without_force() {
 }
 
 #[test]
+fn explicit_outputs_protect_orphan_sidecars_even_with_force() {
+    let root = temp_root("relaygraph-output-orphan-sidecar");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+    fs::write(
+        root.join("missing.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: orphan\nlinks: []\n",
+    )
+    .unwrap();
+
+    let export = run(
+        &root,
+        [
+            "export",
+            "--output",
+            "missing.md.relaygraph.yaml",
+            "--force",
+        ],
+    );
+
+    assert!(!export.status.success());
+    let sidecar = fs::read_to_string(root.join("missing.md.relaygraph.yaml")).unwrap();
+    assert!(sidecar.contains("id: orphan"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(windows)]
+#[test]
+fn default_outputs_reject_boundary_link_parents() {
+    let root = temp_root("relaygraph-default-output-boundary");
+    let outside = temp_root("relaygraph-default-output-outside");
+    create_fixture_repo(&root);
+    fs::create_dir_all(&outside).unwrap();
+    let relaygraph_dir = root.join("._relaygraph");
+    let junction = Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            relaygraph_dir.to_str().unwrap(),
+            outside.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(junction.status.success());
+
+    let export = run(&root, ["export"]);
+    assert!(!export.status.success());
+    assert!(!outside.join("generated/relaygraph.json").exists());
+
+    let cache = run(&root, ["cache", "rebuild"]);
+    assert!(!cache.status.success());
+    assert!(!outside.join("cache/relaygraph.sqlite").exists());
+
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(outside);
+}
+
+#[test]
 fn explicit_outputs_allow_force_overwrite() {
     let root = temp_root("relaygraph-output-force");
     create_fixture_repo(&root);
@@ -862,7 +947,7 @@ fn init_rejects_invalid_plugin_paths_before_writing_sidecars() {
 fn init_rejects_gitignored_generated_sidecars() {
     let root = temp_root("relaygraph-init-ignored-sidecar");
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join(".gitignore"), "*.relaygraph.yaml\n").unwrap();
+    fs::write(root.join(".gitignore"), "*.md.relaygraph.yaml\n").unwrap();
     fs::write(
         root.join(".relaygraph.yaml"),
         "schemaVersion: 1\nplugins: []\nrequireSidecar:\n  - \"**\"\n",
@@ -882,6 +967,33 @@ fn init_rejects_gitignored_generated_sidecars() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("generated sidecar would be ignored by Git discovery"));
     assert!(!root.join("a.md.relaygraph.yaml").exists());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ignored_root_config_is_not_accepted_in_git_ignore_mode() {
+    let root = temp_root("relaygraph-ignored-config");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join(".gitignore"), ".relaygraph.yaml\n").unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nrequireSidecar:\n  - \"**\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+    let init = Command::new("git")
+        .arg("init")
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(".relaygraph.yaml must be part of Git-backed repository discovery"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -1111,6 +1223,55 @@ fn missing_path_locator_does_not_resolve_target_path() {
         ],
     );
     assert_success_with_lines(links, &["a.md --x--> path:missing.md"]);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn path_locators_normalize_current_directory_components() {
+    let root = temp_root("relaygraph-path-dot-normalize");
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("docs/source.md"), "# Source\n").unwrap();
+    fs::write(root.join("docs/target.md"), "# Target\n").unwrap();
+    fs::write(
+        root.join("docs/source.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: source\nlinks:\n  - rel: x\n    to: path:docs/./target.md\n",
+    )
+    .unwrap();
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert_success_with_stdout(output, "[]");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn path_locators_reject_parent_traversal() {
+    let root = temp_root("relaygraph-path-parent-reject");
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("docs/source.md"), "# Source\n").unwrap();
+    fs::write(
+        root.join("docs/source.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: source\nlinks:\n  - rel: x\n    to: path:../target.md\n",
+    )
+    .unwrap();
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"code\": \"schema-error\""));
+    assert!(stdout.contains("parent traversal"));
 
     let _ = fs::remove_dir_all(root);
 }

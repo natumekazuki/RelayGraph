@@ -36,6 +36,14 @@ pub fn is_git_ignored(root: &Path, repo_path: &str) -> Result<bool> {
     }
 }
 
+pub fn is_git_repository(root: &Path) -> bool {
+    Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(root)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
 fn list_repo_files_inner(
     root: &Path,
     use_git_ignore: bool,

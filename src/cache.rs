@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::locator::parse_locator;
 use crate::model::{BuildResult, Direction, Locator, CACHE_SCHEMA_VERSION};
 use crate::plugin::build_relation_rank;
-use crate::util::{display_path, normalize_repo_path};
+use crate::util::{display_path, normalize_repo_path_strict};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +83,7 @@ fn write_cache_file(path: &Path, graph: &BuildResult) -> Result<()> {
     let transaction = connection.transaction()?;
 
     transaction.execute_batch(include_str!("../docs/schema/cache-schema.sql"))?;
+    transaction.pragma_update(None, "user_version", CACHE_SCHEMA_VERSION)?;
     transaction.execute(
         "INSERT INTO metadata (key, value) VALUES (?1, ?2)",
         params!["cacheSchemaVersion", CACHE_SCHEMA_VERSION.to_string()],
@@ -290,7 +291,9 @@ pub fn cache_links(
                         .is_some_and(|path| link.target_path.as_deref() == Some(path))
             }
             Some(Locator::Path(path)) => {
-                let normalized = normalize_repo_path(path);
+                let Ok(normalized) = normalize_repo_path_strict(path) else {
+                    return false;
+                };
                 link.target_path.as_deref() == Some(normalized.as_str())
                     || cache_link_target_path(link).as_deref() == Some(normalized.as_str())
             }
@@ -303,7 +306,7 @@ pub fn cache_links(
 
 fn cache_link_target_path(link: &CacheLink) -> Option<String> {
     match parse_locator(&link.target_locator).ok()? {
-        Locator::Path(path) => Some(normalize_repo_path(path)),
+        Locator::Path(path) => normalize_repo_path_strict(&path).ok(),
         Locator::Id(_) => None,
     }
 }
@@ -466,6 +469,12 @@ fn open_cache(path: &Path) -> Result<Connection> {
 }
 
 fn validate_cache_schema(connection: &Connection, path: &Path) -> Result<()> {
+    ensure_cache_integrity(connection, path)?;
+    ensure_cache_user_version(connection, path)?;
+    ensure_cache_tables(connection, path)?;
+    ensure_cache_indexes(connection, path)?;
+    ensure_cache_foreign_keys(connection, path)?;
+
     let version = connection
         .query_row(
             "SELECT value FROM metadata WHERE key = 'cacheSchemaVersion'",
@@ -500,6 +509,194 @@ fn validate_cache_schema(connection: &Connection, path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn ensure_cache_integrity(connection: &Connection, path: &Path) -> Result<()> {
+    let integrity = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+        .with_context(|| {
+            format!(
+                "failed to verify sqlite cache integrity for {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+    if integrity != "ok" {
+        anyhow::bail!(
+            "sqlite cache integrity check failed for {}: {}; run `relaygraph cache rebuild`",
+            display_path(path),
+            integrity
+        );
+    }
+    Ok(())
+}
+
+fn ensure_cache_user_version(connection: &Connection, path: &Path) -> Result<()> {
+    let user_version = connection
+        .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+        .with_context(|| {
+            format!(
+                "failed to read sqlite cache user_version from {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+    if user_version != CACHE_SCHEMA_VERSION {
+        anyhow::bail!(
+            "unsupported sqlite cache user_version {user_version}; expected {CACHE_SCHEMA_VERSION}; run `relaygraph cache rebuild`"
+        );
+    }
+    Ok(())
+}
+
+fn ensure_cache_tables(connection: &Connection, path: &Path) -> Result<()> {
+    const TABLES: &[(&str, &[&str])] = &[
+        ("metadata", &["key", "value"]),
+        ("plugins", &["name", "traversal_json"]),
+        (
+            "resources",
+            &["path", "id", "kind", "sidecar", "metadata_json"],
+        ),
+        (
+            "links",
+            &[
+                "source_path",
+                "rel",
+                "target_locator",
+                "target_path",
+                "target_id",
+                "relation_rank",
+                "link_order",
+            ],
+        ),
+        ("diagnostics", &["code", "path", "message"]),
+    ];
+
+    for (table, columns) in TABLES {
+        let found = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                params![table],
+                |row| row.get::<_, i64>(0),
+            )
+            .with_context(|| {
+                format!(
+                    "failed to inspect sqlite cache tables in {}; run `relaygraph cache rebuild`",
+                    display_path(path)
+                )
+            })?;
+        if found != 1 {
+            anyhow::bail!(
+                "sqlite cache table {table} is missing in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            );
+        }
+
+        let mut statement = connection
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .with_context(|| {
+                format!(
+                    "failed to inspect sqlite cache table {table} in {}; run `relaygraph cache rebuild`",
+                    display_path(path)
+                )
+            })?;
+        let existing = statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<BTreeSet<_>>>()
+            .with_context(|| {
+                format!(
+                    "failed to read sqlite cache columns for {table} in {}; run `relaygraph cache rebuild`",
+                    display_path(path)
+                )
+            })?;
+        for column in *columns {
+            if !existing.contains(*column) {
+                anyhow::bail!(
+                    "sqlite cache column {table}.{column} is missing in {}; run `relaygraph cache rebuild`",
+                    display_path(path)
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_cache_indexes(connection: &Connection, path: &Path) -> Result<()> {
+    const INDEXES: &[&str] = &[
+        "links_source_path_idx",
+        "links_target_path_idx",
+        "links_target_id_idx",
+        "resources_id_idx",
+        "resources_kind_idx",
+    ];
+
+    for index in INDEXES {
+        let found = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                params![index],
+                |row| row.get::<_, i64>(0),
+            )
+            .with_context(|| {
+                format!(
+                    "failed to inspect sqlite cache indexes in {}; run `relaygraph cache rebuild`",
+                    display_path(path)
+                )
+            })?;
+        if found != 1 {
+            anyhow::bail!(
+                "sqlite cache index {index} is missing in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn ensure_cache_foreign_keys(connection: &Connection, path: &Path) -> Result<()> {
+    let links_foreign_key = connection
+        .prepare("PRAGMA foreign_key_list(links)")
+        .and_then(|mut statement| {
+            let keys = statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(keys.into_iter().any(|(table, from, to)| {
+                table == "resources" && from == "source_path" && to == "path"
+            }))
+        })
+        .with_context(|| {
+            format!(
+                "failed to inspect sqlite cache foreign key definitions in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+    if !links_foreign_key {
+        anyhow::bail!(
+            "sqlite cache foreign key links.source_path -> resources.path is missing in {}; run `relaygraph cache rebuild`",
+            display_path(path)
+        );
+    }
+
+    let mut statement = connection
+        .prepare("PRAGMA foreign_key_check")
+        .with_context(|| {
+            format!(
+                "failed to inspect sqlite cache foreign keys in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+    let mut rows = statement.query([])?;
+    if rows.next()?.is_some() {
+        anyhow::bail!(
+            "sqlite cache foreign key check failed in {}; run `relaygraph cache rebuild`",
+            display_path(path)
+        );
+    }
+    Ok(())
+}
+
 fn resolve_cache_resource_path(connection: &Connection, locator: &str) -> Result<String> {
     resolve_cache_resource_path_optional(connection, locator)?
         .with_context(|| format!("unknown cache resource locator: {locator}"))
@@ -523,7 +720,7 @@ fn resolve_cache_resource_path_optional(
             }
         }
         Locator::Path(path) => {
-            let path = normalize_repo_path(path);
+            let path = normalize_repo_path_strict(&path).map_err(anyhow::Error::msg)?;
             match connection.query_row(
                 "SELECT path FROM resources WHERE path = ?1",
                 params![path],
@@ -599,6 +796,164 @@ mod tests {
         write_cache(&cache_path, &empty_graph()).unwrap();
 
         assert_eq!(fs::read_to_string(&existing_temp).unwrap(), "do not delete");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_incomplete_schema() {
+        let root = temp_root("relaygraph-cache-incomplete-schema");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+                PRAGMA user_version = 1;
+                CREATE TABLE metadata (
+                    key TEXT PRIMARY KEY NOT NULL,
+                    value TEXT NOT NULL
+                );
+                INSERT INTO metadata (key, value) VALUES ('cacheSchemaVersion', '1');
+                "#,
+            )
+            .unwrap();
+        drop(connection);
+
+        let result = cache_resources(&cache_path, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("run `relaygraph cache rebuild`"));
+        assert!(message.contains("sqlite cache table plugins is missing"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_wrong_user_version() {
+        let root = temp_root("relaygraph-cache-user-version");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+
+        write_cache(&cache_path, &empty_graph()).unwrap();
+        let connection = Connection::open(&cache_path).unwrap();
+        connection.pragma_update(None, "user_version", 999).unwrap();
+        drop(connection);
+
+        let result = cache_resources(&cache_path, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("unsupported sqlite cache user_version 999"));
+        assert!(message.contains("run `relaygraph cache rebuild`"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_missing_index() {
+        let root = temp_root("relaygraph-cache-missing-index");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+
+        write_cache(&cache_path, &empty_graph()).unwrap();
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .execute_batch("DROP INDEX links_source_path_idx;")
+            .unwrap();
+        drop(connection);
+
+        let result = cache_resources(&cache_path, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("sqlite cache index links_source_path_idx is missing"));
+        assert!(message.contains("run `relaygraph cache rebuild`"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_foreign_key_violations() {
+        let root = temp_root("relaygraph-cache-foreign-key");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+
+        write_cache(&cache_path, &empty_graph()).unwrap();
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "OFF")
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO links (source_path, rel, target_locator) VALUES (?1, ?2, ?3)",
+                params!["missing.md", "x", "path:target.md"],
+            )
+            .unwrap();
+        drop(connection);
+
+        let result = cache_resources(&cache_path, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("sqlite cache foreign key check failed"));
+        assert!(message.contains("run `relaygraph cache rebuild`"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_missing_foreign_key_definition() {
+        let root = temp_root("relaygraph-cache-missing-foreign-key");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+                PRAGMA user_version = 1;
+                CREATE TABLE metadata (
+                    key TEXT PRIMARY KEY NOT NULL,
+                    value TEXT NOT NULL
+                );
+                INSERT INTO metadata (key, value) VALUES ('cacheSchemaVersion', '1');
+                CREATE TABLE plugins (
+                    name TEXT PRIMARY KEY NOT NULL,
+                    traversal_json TEXT
+                );
+                CREATE TABLE resources (
+                    path TEXT PRIMARY KEY NOT NULL,
+                    id TEXT,
+                    kind TEXT,
+                    sidecar TEXT,
+                    metadata_json TEXT NOT NULL
+                );
+                CREATE TABLE links (
+                    source_path TEXT NOT NULL,
+                    rel TEXT NOT NULL,
+                    target_locator TEXT NOT NULL,
+                    target_path TEXT,
+                    target_id TEXT,
+                    relation_rank INTEGER,
+                    link_order INTEGER
+                );
+                CREATE INDEX links_source_path_idx ON links(source_path);
+                CREATE INDEX links_target_path_idx ON links(target_path);
+                CREATE INDEX links_target_id_idx ON links(target_id);
+                CREATE INDEX resources_id_idx ON resources(id);
+                CREATE INDEX resources_kind_idx ON resources(kind);
+                CREATE TABLE diagnostics (
+                    code TEXT NOT NULL,
+                    path TEXT,
+                    message TEXT NOT NULL
+                );
+                "#,
+            )
+            .unwrap();
+        drop(connection);
+
+        let result = cache_resources(&cache_path, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("foreign key links.source_path -> resources.path is missing"));
+        assert!(message.contains("run `relaygraph cache rebuild`"));
         let _ = fs::remove_dir_all(root);
     }
 

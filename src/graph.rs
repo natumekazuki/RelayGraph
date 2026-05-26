@@ -12,7 +12,7 @@ use crate::model::{
 };
 use crate::plugin::{build_relation_rank, load_plugins};
 use crate::repo::list_repo_files_with_diagnostics;
-use crate::util::{globset, is_repo_boundary_link, matches_glob, normalize_repo_path};
+use crate::util::{globset, is_repo_boundary_link, matches_glob, normalize_repo_path_strict};
 
 pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
     let suffix = sidecar_suffix(config);
@@ -186,7 +186,17 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                     }
                 }
                 Ok(Locator::Path(path)) => {
-                    let normalized = normalize_repo_path(path);
+                    let normalized = match normalize_repo_path_strict(&path) {
+                        Ok(normalized) => normalized,
+                        Err(message) => {
+                            diagnostics.push(Diagnostic {
+                                code: "schema-error",
+                                path: Some(sidecar_path.to_string()),
+                                message: format!("invalid path locator {}: {message}", link.to),
+                            });
+                            continue;
+                        }
+                    };
                     let target_path = if path_set.contains(&normalized) {
                         Some(normalized.clone())
                     } else {

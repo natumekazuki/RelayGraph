@@ -16,8 +16,9 @@ use crate::graph::build_graph;
 use crate::init::init_missing_sidecars;
 use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
 use crate::plugin::normalize_plugin_repo_path;
+use crate::repo::list_repo_files;
 use crate::trace::trace_from;
-use crate::util::{display_path, normalize_repo_path};
+use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 
 #[derive(Parser)]
 #[command(name = "relaygraph")]
@@ -240,9 +241,7 @@ fn export_command(
             .join("generated")
             .join("relaygraph.json")
     });
-    if explicit_output {
-        guard_explicit_output(root, config, &graph, &output, force)?;
-    }
+    guard_output(root, config, &graph, &output, force, explicit_output)?;
     let export = to_export(graph);
     if let Some(parent) = output
         .parent()
@@ -278,27 +277,30 @@ fn trace_command(
     Ok(ExitCode::SUCCESS)
 }
 
-fn guard_explicit_output(
+fn guard_output(
     root: &std::path::Path,
     config: &crate::model::Config,
     graph: &BuildResult,
     output: &std::path::Path,
     force: bool,
+    require_force_for_existing: bool,
 ) -> Result<()> {
-    let absolute_output = if output.is_absolute() {
+    let raw_absolute_output = if output.is_absolute() {
         output.to_path_buf()
     } else {
         std::env::current_dir()
             .context("failed to resolve current directory")?
             .join(output)
     };
+    reject_boundary_output_path(&raw_absolute_output)?;
 
-    let absolute_output = normalize_existing_path_for_comparison(&absolute_output)?;
+    let absolute_output = normalize_existing_path_for_comparison(&raw_absolute_output)?;
     let normalized_root = normalize_existing_path_for_comparison(root)?;
+    reject_boundary_output_path(&absolute_output)?;
 
     if let Ok(relative) = absolute_output.strip_prefix(&normalized_root) {
         let repo_path = normalize_repo_path(relative.to_string_lossy());
-        if protected_repo_paths(config, graph).contains(&repo_path) {
+        if protected_repo_paths(root, config, graph)?.contains(&repo_path) {
             anyhow::bail!(
                 "refusing to write output into repository declaration or source path {}",
                 repo_path
@@ -306,13 +308,28 @@ fn guard_explicit_output(
         }
     }
 
-    if absolute_output.exists() && !force {
+    if require_force_for_existing && absolute_output.exists() && !force {
         anyhow::bail!(
             "refusing to overwrite existing output {}; pass --force to replace it",
             display_path(output)
         );
     }
 
+    Ok(())
+}
+
+fn reject_boundary_output_path(output: &std::path::Path) -> Result<()> {
+    for path in output.ancestors() {
+        let Ok(metadata) = fs::symlink_metadata(path) else {
+            continue;
+        };
+        if is_repo_boundary_link(&metadata) {
+            anyhow::bail!(
+                "refusing to write output through symlink or reparse point {}",
+                display_path(path)
+            );
+        }
+    }
     Ok(())
 }
 
@@ -340,13 +357,20 @@ fn normalize_existing_path_for_comparison(path: &std::path::Path) -> Result<Path
 }
 
 fn protected_repo_paths(
+    root: &std::path::Path,
     config: &crate::model::Config,
     graph: &BuildResult,
-) -> std::collections::BTreeSet<String> {
+) -> Result<std::collections::BTreeSet<String>> {
     let mut paths = std::collections::BTreeSet::new();
     paths.insert(CONFIG_PATH.to_string());
     for plugin in config.plugins.as_deref().unwrap_or(&[]) {
         paths.insert(normalize_plugin_repo_path(plugin));
+    }
+    let suffix = crate::config::sidecar_suffix(config);
+    for path in list_repo_files(root, config.use_git_ignore.unwrap_or(true))? {
+        if path.ends_with(&suffix) {
+            paths.insert(path);
+        }
     }
     for resource in &graph.resources {
         paths.insert(resource.path.clone());
@@ -354,7 +378,7 @@ fn protected_repo_paths(
             paths.insert(sidecar.clone());
         }
     }
-    paths
+    Ok(paths)
 }
 
 fn cache_rebuild_command(
@@ -367,9 +391,7 @@ fn cache_rebuild_command(
             let graph = build_graph(root, config)?;
             let explicit_output = output.is_some();
             let output = output.unwrap_or_else(|| root.join(default_cache_path()));
-            if explicit_output {
-                guard_explicit_output(root, config, &graph, &output, force)?;
-            }
+            guard_output(root, config, &graph, &output, force, explicit_output)?;
             write_cache(&output, &graph)?;
             println!("wrote {}", display_path(&output));
             Ok(if graph.diagnostics.is_empty() {

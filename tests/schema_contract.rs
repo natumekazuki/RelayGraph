@@ -216,6 +216,22 @@ fn sidecar_and_plugin_schema_reject_whitespace_only_names() {
         &serde_json::json!({"links": [{"rel": "x", "to": "path:   "}]}),
         &sidecar,
     );
+    assert_schema_rejects(
+        &serde_json::json!({"links": [{"rel": "x", "to": "path:../a.md"}]}),
+        &sidecar,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"links": [{"rel": "x", "to": "path:sub/../a.md"}]}),
+        &sidecar,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"links": [{"rel": "x", "to": "path:/a.md"}]}),
+        &sidecar,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"links": [{"rel": "x", "to": "path:C:\\a.md"}]}),
+        &sidecar,
+    );
     assert_schema_rejects(&serde_json::json!({"name": " "}), &plugin);
     assert_schema_rejects(
         &serde_json::json!({"name": "ok", "resourceKinds": [" "]}),
@@ -317,18 +333,30 @@ fn schema_accepts(value: &Value, schema: &Value) -> bool {
             {
                 return false;
             }
-            "^(id|path):.*\\S.*$" => {
+            "^(id:.*\\S.*|path:(?!.?:)(?![\\\\/])(?!.*[\\\\/]\\.\\.([\\\\/]|$))(?!\\.\\.([\\\\/]|$)).*\\S.*)$" => {
                 let Some(text) = value.as_str() else {
                     return false;
                 };
-                let Some(locator_value) = text
-                    .strip_prefix("id:")
-                    .or_else(|| text.strip_prefix("path:"))
-                else {
+                let Some((locator_kind, locator_value)) = text.split_once(':') else {
                     return false;
                 };
+                if locator_kind != "id" && locator_kind != "path" {
+                    return false;
+                }
                 if !locator_value.chars().any(|c| !c.is_whitespace()) {
                     return false;
+                }
+                if locator_kind == "path" {
+                    let has_parent = locator_value
+                        .split(['/', '\\'])
+                        .any(|component| component == "..");
+                    if locator_value.starts_with('/')
+                        || locator_value.starts_with('\\')
+                        || locator_value.get(1..2) == Some(":")
+                        || has_parent
+                    {
+                        return false;
+                    }
                 }
             }
             "^(?!.*[<>:\\\"/\\\\|?*])(?!.*\\.\\.)(?!.*[.\\s]$).*\\S.*$" => {

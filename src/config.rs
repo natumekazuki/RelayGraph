@@ -5,6 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::model::{Config, Diagnostic, CONFIG_PATH, DEFAULT_SIDECAR_SUFFIX};
+use crate::repo::{is_git_ignored, is_git_repository};
 use crate::util::is_repo_boundary_link;
 
 pub fn load_config(root: &Path) -> Result<Config> {
@@ -21,7 +22,14 @@ pub fn load_config(root: &Path) -> Result<Config> {
 
     let text = fs::read_to_string(&path).context("failed to read .relaygraph.yaml")?;
     let config: Config = serde_yaml::from_str(&text).context("failed to parse .relaygraph.yaml")?;
-    Ok(apply_config_defaults(config))
+    let config = apply_config_defaults(config);
+    if config.use_git_ignore.unwrap_or(true)
+        && is_git_repository(root)
+        && is_git_ignored(root, CONFIG_PATH)?
+    {
+        anyhow::bail!(".relaygraph.yaml must be part of Git-backed repository discovery");
+    }
+    Ok(config)
 }
 
 fn apply_config_defaults(mut config: Config) -> Config {
