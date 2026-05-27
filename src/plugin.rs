@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
 use crate::diagnostic::validate_schema_version;
 use crate::model::{Config, Diagnostic, Plugin, CONFIG_PATH};
+use crate::repo::is_reserved_generated_path;
+use crate::util::{is_repo_boundary_link, normalize_repo_path, normalize_repo_path_strict};
 
 const DEFAULT_FEATURE_TRACE_PLUGIN: &str = "relaygraph/plugins/feature-trace.yaml";
 
@@ -78,47 +80,51 @@ fn plugin_is_discovered_or_embedded_default(
     path: &str,
     discovered_files: &BTreeSet<String>,
 ) -> bool {
-    let repo_path = normalize_plugin_repo_path(path);
+    let Ok(repo_path) = validated_plugin_repo_path(path) else {
+        return false;
+    };
     discovered_files.contains(&repo_path)
         || (repo_path == DEFAULT_FEATURE_TRACE_PLUGIN && !root.join(&repo_path).exists())
 }
 
 pub(crate) fn normalize_plugin_repo_path(path: &str) -> String {
-    let mut normalized = PathBuf::new();
-    for component in Path::new(path).components() {
-        if matches!(component, Component::CurDir) {
-            continue;
-        }
-        normalized.push(component.as_os_str());
-    }
-    crate::util::normalize_repo_path(normalized.to_string_lossy())
+    normalize_repo_path(path)
+}
+
+pub(crate) fn configured_plugin_paths(config: &Config) -> BTreeSet<String> {
+    config
+        .plugins
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|path| validated_plugin_repo_path(path).ok())
+        .collect()
 }
 
 fn read_plugin_text(full_path: &Path, path: &str) -> Result<String> {
-    match fs::read_to_string(full_path) {
-        Ok(text) => Ok(text),
+    match fs::symlink_metadata(full_path) {
+        Ok(metadata) if is_repo_boundary_link(&metadata) => {
+            anyhow::bail!("plugin file must not be a symlink: {path}");
+        }
+        Ok(_) => {}
         Err(error)
             if error.kind() == std::io::ErrorKind::NotFound
                 && path == DEFAULT_FEATURE_TRACE_PLUGIN =>
         {
-            Ok(include_str!("../relaygraph/plugins/feature-trace.yaml").to_string())
+            return Ok(include_str!("../relaygraph/plugins/feature-trace.yaml").to_string());
         }
+        Err(error) => return Err(error.into()),
+    }
+
+    match fs::read_to_string(full_path) {
+        Ok(text) => Ok(text),
         Err(error) => Err(error.into()),
     }
 }
 
 fn resolve_plugin_path(root: &Path, path: &str) -> Result<PathBuf> {
-    let relative = Path::new(path);
-    if relative.components().any(|component| {
-        matches!(
-            component,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_)
-        )
-    }) {
-        anyhow::bail!("plugin path must be repo-relative and stay inside repository: {path}");
-    }
-
-    let full_path = root.join(relative);
+    let repo_path = validated_plugin_repo_path(path)?;
+    let full_path = root.join(&repo_path);
     let canonical_root = root
         .canonicalize()
         .context("failed to canonicalize repository root")?;
@@ -129,6 +135,16 @@ fn resolve_plugin_path(root: &Path, path: &str) -> Result<PathBuf> {
     }
 
     Ok(full_path)
+}
+
+fn validated_plugin_repo_path(path: &str) -> Result<String> {
+    let repo_path = normalize_repo_path_strict(path).map_err(|_| {
+        anyhow::anyhow!("plugin path must be repo-relative and stay inside repository: {path}")
+    })?;
+    if is_reserved_generated_path(&repo_path) {
+        anyhow::bail!("plugin path must not be under reserved generated directory: {path}");
+    }
+    Ok(repo_path)
 }
 
 pub fn build_relation_rank(plugins: &[Plugin]) -> BTreeMap<&str, usize> {
@@ -181,7 +197,7 @@ fn validate_plugin_definition(plugin: &Plugin, path: &str, diagnostics: &mut Vec
                 path: Some(path.to_string()),
                 message: "rule.when must not be empty".to_string(),
             });
-        } else if !kinds.is_empty() && !kinds.contains(&rule.when) {
+        } else if !kinds.contains(&rule.when) {
             diagnostics.push(Diagnostic {
                 code: "unknown-kind",
                 path: Some(path.to_string()),
@@ -196,7 +212,7 @@ fn validate_plugin_definition(plugin: &Plugin, path: &str, diagnostics: &mut Vec
                     path: Some(path.to_string()),
                     message: "rule.requireAnyOutgoing must not contain empty relation".to_string(),
                 });
-            } else if !relations.is_empty() && !relations.contains(relation) {
+            } else if !relations.contains(relation) {
                 diagnostics.push(Diagnostic {
                     code: "unknown-relation",
                     path: Some(path.to_string()),
@@ -212,7 +228,7 @@ fn validate_plugin_definition(plugin: &Plugin, path: &str, diagnostics: &mut Vec
                     path: Some(path.to_string()),
                     message: "rule.requireReachableKinds must not contain empty kind".to_string(),
                 });
-            } else if !kinds.is_empty() && !kinds.contains(kind) {
+            } else if !kinds.contains(kind) {
                 diagnostics.push(Diagnostic {
                     code: "unknown-kind",
                     path: Some(path.to_string()),
@@ -230,7 +246,7 @@ fn validate_plugin_definition(plugin: &Plugin, path: &str, diagnostics: &mut Vec
                     path: Some(path.to_string()),
                     message: "traversal.startKinds must not contain empty kind".to_string(),
                 });
-            } else if !kinds.is_empty() && !kinds.contains(kind) {
+            } else if !kinds.contains(kind) {
                 diagnostics.push(Diagnostic {
                     code: "unknown-kind",
                     path: Some(path.to_string()),
@@ -246,7 +262,7 @@ fn validate_plugin_definition(plugin: &Plugin, path: &str, diagnostics: &mut Vec
                     path: Some(path.to_string()),
                     message: "traversal.relationOrder must not contain empty relation".to_string(),
                 });
-            } else if !relations.is_empty() && !relations.contains(relation) {
+            } else if !relations.contains(relation) {
                 diagnostics.push(Diagnostic {
                     code: "unknown-relation",
                     path: Some(path.to_string()),

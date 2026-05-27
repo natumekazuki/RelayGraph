@@ -19,15 +19,17 @@
     },
     "plugins": {
       "type": "array",
+      "description": "Repo-relative plugin declaration paths. The reserved generated directory ._relaygraph/ is never a valid plugin location.",
       "items": {
         "type": "string",
         "minLength": 1,
-        "pattern": "^(?![A-Za-z]:)(?![\\\\/])(?!.*(^|[\\\\/])\\.\\.([\\\\/]|$)).*\\S.*$"
+        "pattern": "^(?![A-Za-z]:)(?![\\\\/])(?!(?:\\.[\\\\/])*\\._[Rr][Ee][Ll][Aa][Yy][Gg][Rr][Aa][Pp][Hh](?:[\\\\/]|$))(?!.*(^|[\\\\/])\\.\\.([\\\\/]|$)).*\\S.*$"
       },
       "default": ["relaygraph/plugins/feature-trace.yaml"]
     },
     "exclude": {
       "type": "array",
+      "description": "Additional resource exclusion globs. The reserved generated directory ._relaygraph/ is always excluded even when this list is empty.",
       "items": {
         "type": "string",
         "minLength": 1,

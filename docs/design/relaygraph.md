@@ -36,9 +36,11 @@ Generated files are not source of truth:
 - `._relaygraph/generated/relaygraph.json`
 - `._relaygraph/cache/relaygraph.sqlite`
 
+The full `._relaygraph/` tree is a reserved generated area. It is always excluded from repository discovery, even when `exclude: []` is configured, and it cannot contain plugin declarations or source resources.
+
 ## Resource Model
 
-Every discovered repository file is a resource unless excluded by config. A resource may have a nearby sidecar:
+Every discovered repository file is a resource unless excluded by config or reserved as generated output. Configured plugin YAML files are declarations, not resources, and are excluded from resource discovery even when `exclude: []` is configured. A resource may have a nearby sidecar:
 
 ```text
 src/main.rs
@@ -82,7 +84,7 @@ Plugins define:
 - required reachable resource kinds
 - traversal roots and relation order
 
-The bundled plugin is `feature-trace`. It is embedded in the binary for the default path `relaygraph/plugins/feature-trace.yaml`; custom plugins are loaded only from repo-relative paths inside the repository root and Git-backed discovery.
+The bundled plugin is `feature-trace`. It is embedded in the binary for the default path `relaygraph/plugins/feature-trace.yaml`; custom plugins are loaded only from repo-relative paths inside the repository root and Git-backed discovery. Plugin paths under `._relaygraph/` are rejected because that tree is reserved for generated artifacts.
 
 ## SQLite Cache
 
@@ -147,6 +149,7 @@ Feature-level docs live under `docs/features/` and are connected to implementati
 - `missing-sidecar`
 - `orphan-sidecar`
 - `duplicate-id`
+- `ambiguous-id`
 - `unresolved-id`
 - `missing-path`
 - `unknown-kind`

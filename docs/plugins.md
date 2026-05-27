@@ -2,7 +2,7 @@
 
 Plugins are declarative YAML files. They define resource kinds, relation names, validation rules, and traversal order. Plugins must not execute code.
 
-The default `feature-trace` plugin is bundled into the `relaygraph` binary at `relaygraph/plugins/feature-trace.yaml`, so a fresh repository can validate without a separate plugin file. Custom plugins must be normal repository files under the repo root and referenced by repo-relative paths in `.relaygraph.yaml`; absolute paths and `..` are rejected.
+The default `feature-trace` plugin is bundled into the `relaygraph` binary at `relaygraph/plugins/feature-trace.yaml`, so a fresh repository can validate without a separate plugin file. Custom plugins must be normal repository files under the repo root and referenced by repo-relative paths in `.relaygraph.yaml`; absolute paths, `..`, symlinks, reparse points, and `._relaygraph/` paths are rejected.
 
 ## Minimal Plugin
 
@@ -31,8 +31,8 @@ traversal:
 
 - `schemaVersion`: optional, defaults to `1`; only `1` is supported.
 - `name`: required plugin name.
-- `resourceKinds`: allowed `kind` values in sidecars.
-- `relations`: allowed `rel` values in sidecar links.
+- `resourceKinds`: allowed `kind` values in sidecars. An empty list means no sidecar kinds are declared.
+- `relations`: allowed `rel` values in sidecar links. An empty list means no relations are declared.
 - `rules[].when`: resource kind the rule applies to.
 - `rules[].requireAnyOutgoing`: at least one outgoing relation from this list must exist.
 - `rules[].requireReachableKinds`: every listed resource kind must be reachable through outgoing links.

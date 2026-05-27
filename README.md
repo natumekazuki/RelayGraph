@@ -8,7 +8,14 @@ The source of truth is always the repository content:
 - `*.relaygraph.yaml` sidecars
 - YAML plugins under `relaygraph/plugins/`
 
+`._relaygraph/` is a reserved generated directory. It is never discovered as resources or declarations, even if `exclude: []` is configured, and plugins cannot be loaded from there.
+
 The local SQLite database is a generated cache for fast query and AI-agent use. It can always be rebuilt from the Git-backed declarations.
+
+Prerequisites:
+
+- Rust toolchain with `cargo`
+- Git available on `PATH`
 
 ## Commands
 
@@ -30,10 +37,14 @@ cargo run -- cache trace path:src/main.rs --direction incoming
 cargo run -- cache diagnostics
 ```
 
+`init` only creates sidecars for paths matched by `requireSidecar`. With the default `requireSidecar: []`, it is expected to be a no-op.
+
 Default outputs:
 
 - Graph JSON: `._relaygraph/generated/relaygraph.json`
 - SQLite cache: `._relaygraph/cache/relaygraph.sqlite`
+
+The entire `._relaygraph/` tree is reserved for generated artifacts and is excluded from discovery independently of the configured `exclude` list.
 
 ## Development
 

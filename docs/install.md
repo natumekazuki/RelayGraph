@@ -2,6 +2,11 @@
 
 ## Local Install
 
+Prerequisites:
+
+- Rust toolchain with `cargo`
+- Git available on `PATH`; `validate`, `export`, `trace`, and `init` use Git-backed discovery by default.
+
 From the repository root:
 
 ```powershell

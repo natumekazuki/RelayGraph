@@ -608,6 +608,323 @@ fn explicit_outputs_protect_orphan_sidecars_even_with_force() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn default_outputs_can_be_rebuilt_when_generated_dir_is_not_excluded() {
+    let root = temp_root("relaygraph-default-output-self-resource");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\nexclude: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    assert_success(run(&root, ["export"]));
+    assert_success(run(&root, ["export"]));
+    assert!(root.join("._relaygraph/generated/relaygraph.json").exists());
+    let export_json: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join("._relaygraph/generated/relaygraph.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(!export_json["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|resource| resource["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("._relaygraph/"))));
+
+    assert_success(run(&root, ["cache", "rebuild"]));
+    assert_success(run(&root, ["cache", "rebuild"]));
+    assert!(root.join("._relaygraph/cache/relaygraph.sqlite").exists());
+    let resources = run(&root, ["cache", "resources"]);
+    let stdout = String::from_utf8_lossy(&resources.stdout);
+    let stderr = String::from_utf8_lossy(&resources.stderr);
+    assert!(
+        resources.status.success(),
+        "expected success\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!stdout.contains("._relaygraph/"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn configured_plugins_are_declarations_not_resources() {
+    let root = temp_root("relaygraph-plugin-declaration-not-resource");
+    fs::create_dir_all(root.join("relaygraph/plugins")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - relaygraph/plugins/./custom.yaml\nexclude: []\nrequireSidecar:\n  - relaygraph/**\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("relaygraph/plugins/custom.yaml"),
+        "schemaVersion: 1\nname: custom\nresourceKinds: []\nrelations: []\nrules: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    let init = run(&root, ["init"]);
+    assert_success(init);
+    assert!(!root
+        .join("relaygraph/plugins/custom.yaml.relaygraph.yaml")
+        .exists());
+
+    let export_path = root.join("graph.json");
+    assert_success(run(
+        &root,
+        ["export", "--output", export_path.to_str().unwrap()],
+    ));
+    let export_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(export_path).unwrap()).unwrap();
+    assert!(!export_json["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|resource| resource["path"] == "relaygraph/plugins/custom.yaml"));
+    assert!(!export_json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "missing-sidecar"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reserved_generated_plugin_paths_are_rejected() {
+    let root = temp_root("relaygraph-reserved-plugin");
+    fs::create_dir_all(root.join("._relaygraph/plugins")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - ._relaygraph/plugins/custom.yaml\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("._relaygraph/plugins/custom.yaml"),
+        "schemaVersion: 1\nname: custom\nresourceKinds: []\nrelations: []\nrules: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"code\": \"schema-error\""));
+    assert!(stdout.contains("reserved generated directory"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn invalid_plugin_paths_do_not_hide_resources() {
+    let root = temp_root("relaygraph-invalid-plugin-does-not-hide-resource");
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - docs/../a.md\nexclude: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    let export_path = root.join("graph.json");
+    let export = run(&root, ["export", "--output", export_path.to_str().unwrap()]);
+
+    assert!(!export.status.success());
+    let export_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(export_path).unwrap()).unwrap();
+    assert!(export_json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "schema-error"));
+    assert!(export_json["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|resource| resource["path"] == "a.md"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn backslash_parent_plugin_paths_do_not_hide_resources() {
+    let root = temp_root("relaygraph-backslash-plugin-does-not-hide-resource");
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - 'docs\\..\\a.md'\nexclude: []\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    let export_path = root.join("graph.json");
+    let export = run(&root, ["export", "--output", export_path.to_str().unwrap()]);
+
+    assert!(!export.status.success());
+    let export_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(export_path).unwrap()).unwrap();
+    assert!(export_json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "schema-error"));
+    assert!(export_json["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|resource| resource["path"] == "a.md"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reserved_generated_directory_is_case_insensitive() {
+    let root = temp_root("relaygraph-reserved-case-insensitive");
+    fs::create_dir_all(root.join("._RelayGraph/generated")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\nexclude: []\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("._RelayGraph/generated/relaygraph.json"),
+        "{\"generated\":true}\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    let export_path = root.join("graph.json");
+    assert_success(run(
+        &root,
+        ["export", "--output", export_path.to_str().unwrap()],
+    ));
+    let export_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(export_path).unwrap()).unwrap();
+    assert!(!export_json["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|resource| resource["path"]
+            .as_str()
+            .is_some_and(|path| path.to_ascii_lowercase().starts_with("._relaygraph/"))));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn empty_relation_contract_rejects_undeclared_relations() {
+    let root = temp_root("relaygraph-empty-relations-contract");
+    fs::create_dir_all(root.join("relaygraph/plugins")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - relaygraph/plugins/custom.yaml\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("relaygraph/plugins/custom.yaml"),
+        "schemaVersion: 1\nname: custom\nresourceKinds:\n  - source\nrelations: []\nrules:\n  - when: source\n    requireAnyOutgoing:\n      - x\ntraversal:\n  relationOrder:\n    - x\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+    fs::write(
+        root.join("a.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: a\nkind: source\nlinks:\n  - rel: x\n    to: path:a.md\n",
+    )
+    .unwrap();
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"code\": \"unknown-relation\""));
+    assert!(stdout.contains("rule references unknown relation: x"));
+    assert!(stdout.contains("traversal references unknown relation: x"));
+    assert!(stdout.contains("unknown relation: x"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn plugin_symlinks_are_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_root("relaygraph-plugin-symlink");
+    fs::create_dir_all(root.join("relaygraph/plugins")).unwrap();
+    fs::create_dir_all(root.join("._relaygraph/generated")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - relaygraph/plugins/custom.yaml\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("._relaygraph/generated/custom.yaml"),
+        "schemaVersion: 1\nname: custom\nresourceKinds: []\nrelations: []\nrules: []\n",
+    )
+    .unwrap();
+    symlink(
+        root.join("._relaygraph/generated/custom.yaml"),
+        root.join("relaygraph/plugins/custom.yaml"),
+    )
+    .unwrap();
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"code\": \"plugin-load-error\""));
+    assert!(stdout.contains("plugin file must not be a symlink"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(windows)]
+#[test]
+fn plugin_symlinks_are_rejected() {
+    let root = temp_root("relaygraph-plugin-symlink");
+    fs::create_dir_all(root.join("relaygraph/plugins")).unwrap();
+    fs::create_dir_all(root.join("._relaygraph/generated")).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins:\n  - relaygraph/plugins/custom.yaml\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("._relaygraph/generated/custom.yaml"),
+        "schemaVersion: 1\nname: custom\nresourceKinds: []\nrelations: []\nrules: []\n",
+    )
+    .unwrap();
+    let link = Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            root.join("relaygraph/plugins/custom.yaml")
+                .to_str()
+                .unwrap(),
+            root.join("._relaygraph/generated/custom.yaml")
+                .to_str()
+                .unwrap(),
+        ])
+        .output()
+        .unwrap();
+    if !link.status.success() {
+        let _ = fs::remove_dir_all(root);
+        return;
+    }
+
+    let output = run(&root, ["validate", "--json"]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"code\": \"plugin-load-error\""));
+    assert!(stdout.contains("plugin file must not be a symlink"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
 #[cfg(windows)]
 #[test]
 fn default_outputs_reject_boundary_link_parents() {

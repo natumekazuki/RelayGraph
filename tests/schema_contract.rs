@@ -110,6 +110,9 @@ fn export_output_matches_documented_contract() {
     });
     let output = serde_json::to_value(export).unwrap();
 
+    assert!(jsonschema::validator_for(&schema)
+        .unwrap()
+        .is_valid(&output));
     assert_matches_schema(&output, &schema);
     assert_matches_schema(
         &output["resources"][0],
@@ -145,6 +148,14 @@ fn export_output_matches_documented_contract() {
     assert!(output["resources"][0]["links"][1]["order"].is_null());
     assert!(output["diagnostics"][1]["path"].is_null());
     assert!(output["plugins"][1]["traversal"].is_null());
+    assert_schema_rejects(
+        &serde_json::json!({
+            "resources": [],
+            "diagnostics": [1],
+            "plugins": []
+        }),
+        &schema,
+    );
 }
 
 #[test]
@@ -191,6 +202,26 @@ fn config_schema_documents_runtime_contract() {
         &serde_json::json!({"plugins": ["C:\\outside.yaml"]}),
         &schema,
     );
+    assert_schema_rejects(
+        &serde_json::json!({"plugins": ["._relaygraph/plugins/custom.yaml"]}),
+        &schema,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"plugins": ["./._relaygraph/plugins/custom.yaml"]}),
+        &schema,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"plugins": ["././._relaygraph/plugins/custom.yaml"]}),
+        &schema,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"plugins": ["._RelayGraph/plugins/custom.yaml"]}),
+        &schema,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"plugins": [".\\._relaygraph\\plugins\\custom.yaml"]}),
+        &schema,
+    );
     assert_schema_rejects(&serde_json::json!({"exclude": [" "]}), &schema);
     assert_schema_rejects(&serde_json::json!({"requireSidecar": [" "]}), &schema);
 }
@@ -232,7 +263,16 @@ fn sidecar_and_plugin_schema_reject_whitespace_only_names() {
         &serde_json::json!({"links": [{"rel": "x", "to": "path:C:\\a.md"}]}),
         &sidecar,
     );
+    assert_schema_rejects(&serde_json::json!({}), &plugin);
     assert_schema_rejects(&serde_json::json!({"name": " "}), &plugin);
+    assert_schema_rejects(
+        &serde_json::json!({"name": "ok", "resourceKinds": ["source", "source"]}),
+        &plugin,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"name": "ok", "relations": ["x", "x"]}),
+        &plugin,
+    );
     assert_schema_rejects(
         &serde_json::json!({"name": "ok", "resourceKinds": [" "]}),
         &plugin,
@@ -301,147 +341,11 @@ fn assert_type_matches(value: &Value, schema: &Value) {
 }
 
 fn assert_schema_rejects(value: &Value, schema: &Value) {
+    let validator = jsonschema::validator_for(schema).unwrap();
     assert!(
-        !schema_accepts(value, schema),
+        !validator.is_valid(value),
         "schema unexpectedly accepted {value:?}"
     );
-}
-
-fn schema_accepts(value: &Value, schema: &Value) -> bool {
-    if !schema_type_accepts(value, schema) {
-        return false;
-    }
-    if let Some(const_value) = schema.get("const") {
-        if value != const_value {
-            return false;
-        }
-    }
-    if let Some(min_length) = schema.get("minLength").and_then(Value::as_u64) {
-        if value
-            .as_str()
-            .is_some_and(|text| text.len() < min_length as usize)
-        {
-            return false;
-        }
-    }
-    if let Some(pattern) = schema.get("pattern").and_then(Value::as_str) {
-        match pattern {
-            "\\S"
-                if value
-                    .as_str()
-                    .is_some_and(|text| !text.chars().any(|c| !c.is_whitespace())) =>
-            {
-                return false;
-            }
-            "^(id:.*\\S.*|path:(?!.?:)(?![\\\\/])(?!.*[\\\\/]\\.\\.([\\\\/]|$))(?!\\.\\.([\\\\/]|$)).*\\S.*)$" => {
-                let Some(text) = value.as_str() else {
-                    return false;
-                };
-                let Some((locator_kind, locator_value)) = text.split_once(':') else {
-                    return false;
-                };
-                if locator_kind != "id" && locator_kind != "path" {
-                    return false;
-                }
-                if !locator_value.chars().any(|c| !c.is_whitespace()) {
-                    return false;
-                }
-                if locator_kind == "path" {
-                    let has_parent = locator_value
-                        .split(['/', '\\'])
-                        .any(|component| component == "..");
-                    if locator_value.starts_with('/')
-                        || locator_value.starts_with('\\')
-                        || locator_value.get(1..2) == Some(":")
-                        || has_parent
-                    {
-                        return false;
-                    }
-                }
-            }
-            "^(?!.*[<>:\\\"/\\\\|?*])(?!.*\\.\\.)(?!.*[.\\s]$).*\\S.*$" => {
-                let Some(text) = value.as_str() else {
-                    return false;
-                };
-                if text.chars().any(|character| {
-                    ['<', '>', ':', '"', '/', '\\', '|', '?', '*'].contains(&character)
-                }) || text.contains("..")
-                    || text
-                        .chars()
-                        .last()
-                        .is_some_and(|character| character == '.' || character.is_whitespace())
-                    || !text.chars().any(|c| !c.is_whitespace())
-                {
-                    return false;
-                }
-            }
-            "^(?![A-Za-z]:)(?![\\\\/])(?!.*(^|[\\\\/])\\.\\.([\\\\/]|$)).*\\S.*$" => {
-                let Some(text) = value.as_str() else {
-                    return false;
-                };
-                let has_parent = text.split(['/', '\\']).any(|component| component == "..");
-                if text.starts_with('/')
-                    || text.starts_with('\\')
-                    || text.get(1..2) == Some(":")
-                    || has_parent
-                    || !text.chars().any(|c| !c.is_whitespace())
-                {
-                    return false;
-                }
-            }
-            _ => {}
-        }
-    }
-    if schema.get("additionalProperties").and_then(Value::as_bool) == Some(false) {
-        let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
-            return value.as_object().is_none_or(|object| object.is_empty());
-        };
-        if value
-            .as_object()
-            .is_some_and(|object| object.keys().any(|key| !properties.contains_key(key)))
-        {
-            return false;
-        }
-    }
-    if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
-        if let Some(object) = value.as_object() {
-            for (key, child) in object {
-                if let Some(child_schema) = properties.get(key) {
-                    if !schema_accepts(child, child_schema) {
-                        return false;
-                    }
-                }
-            }
-        }
-    }
-    if let Some(items) = schema.get("items") {
-        if value
-            .as_array()
-            .is_some_and(|items_value| items_value.iter().any(|item| !schema_accepts(item, items)))
-        {
-            return false;
-        }
-    }
-    true
-}
-
-fn schema_type_accepts(value: &Value, schema: &Value) -> bool {
-    let Some(schema_type) = schema.get("type") else {
-        return true;
-    };
-    let types = schema_type
-        .as_array()
-        .cloned()
-        .unwrap_or_else(|| vec![schema_type.clone()]);
-    types.iter().any(|schema_type| match schema_type.as_str() {
-        Some("object") => value.is_object(),
-        Some("array") => value.is_array(),
-        Some("string") => value.is_string(),
-        Some("integer") => value.as_i64().is_some(),
-        Some("boolean") => value.is_boolean(),
-        Some("null") => value.is_null(),
-        _ => false,
-    })
 }
 
 #[test]

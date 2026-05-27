@@ -10,7 +10,7 @@ use crate::locator::parse_locator;
 use crate::model::{
     BuildResult, Config, Diagnostic, Locator, ResolvedLink, Resource, Sidecar, CONFIG_PATH,
 };
-use crate::plugin::{build_relation_rank, load_plugins};
+use crate::plugin::{build_relation_rank, configured_plugin_paths, load_plugins};
 use crate::repo::list_repo_files_with_diagnostics;
 use crate::util::{globset, is_repo_boundary_link, matches_glob, normalize_repo_path_strict};
 
@@ -31,18 +31,21 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
         .iter()
         .flat_map(|plugin| plugin.resource_kinds.iter().cloned())
         .collect::<BTreeSet<_>>();
+    let has_kind_contract = !plugins.is_empty();
     let known_relations = plugins
         .iter()
         .flat_map(|plugin| plugin.relations.iter().cloned())
         .collect::<BTreeSet<_>>();
+    let has_relation_contract = !plugins.is_empty();
     let relation_rank = build_relation_rank(&plugins);
+    let plugin_paths = configured_plugin_paths(config);
 
     let exclude = globset(config.exclude.as_deref().unwrap_or(&[]), &mut diagnostics);
     let mut resource_paths = BTreeSet::new();
     let mut sidecars = BTreeMap::new();
 
     for path in files {
-        if path == CONFIG_PATH || matches_glob(&exclude, &path) {
+        if path == CONFIG_PATH || plugin_paths.contains(&path) || matches_glob(&exclude, &path) {
             continue;
         }
 
@@ -109,7 +112,7 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                 }
             }
             if let Some(kind) = &sidecar.kind {
-                if !known_kinds.is_empty() && !known_kinds.contains(kind) {
+                if has_kind_contract && !known_kinds.contains(kind) {
                     diagnostics.push(Diagnostic {
                         code: "unknown-kind",
                         path: Some(sidecar_path.to_string()),
@@ -150,7 +153,7 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
         };
 
         for link in sidecar.links.clone() {
-            if !known_relations.is_empty() && !known_relations.contains(&link.rel) {
+            if has_relation_contract && !known_relations.contains(&link.rel) {
                 diagnostics.push(Diagnostic {
                     code: "unknown-relation",
                     path: Some(sidecar_path.to_string()),

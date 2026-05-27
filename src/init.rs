@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use crate::config::{sidecar_suffix, validate_config_values};
 use crate::diagnostic::{diagnostics_to_message, validate_schema_version};
 use crate::model::{Config, Sidecar, CONFIG_PATH};
-use crate::plugin::load_plugins;
+use crate::plugin::{configured_plugin_paths, load_plugins};
 use crate::repo::{is_git_ignored, list_repo_files};
 use crate::util::{display_path, globset, is_repo_boundary_link, matches_glob};
 
@@ -32,12 +32,14 @@ pub fn init_missing_sidecars(root: &Path, config: &Config, dry_run: bool) -> Res
     if !diagnostics.is_empty() {
         anyhow::bail!("{}", diagnostics_to_message(&diagnostics));
     }
+    let plugin_paths = configured_plugin_paths(config);
 
     let mut candidates = Vec::new();
     let mut used_ids = existing_sidecar_ids(root, &files, &suffix);
 
     for path in &files {
         if path == CONFIG_PATH
+            || plugin_paths.contains(path)
             || path.ends_with(&suffix)
             || matches_glob(&exclude, path)
             || !matches_glob(&require_sidecar, path)

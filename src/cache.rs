@@ -11,6 +11,7 @@ use serde::Serialize;
 use crate::locator::parse_locator;
 use crate::model::{BuildResult, Direction, Locator, CACHE_SCHEMA_VERSION};
 use crate::plugin::build_relation_rank;
+use crate::repo::is_reserved_generated_path;
 use crate::util::{display_path, normalize_repo_path_strict};
 
 #[derive(Debug, Serialize)]
@@ -474,6 +475,7 @@ fn validate_cache_schema(connection: &Connection, path: &Path) -> Result<()> {
     ensure_cache_tables(connection, path)?;
     ensure_cache_indexes(connection, path)?;
     ensure_cache_foreign_keys(connection, path)?;
+    ensure_cache_path_contract(connection, path)?;
 
     let version = connection
         .query_row(
@@ -504,6 +506,101 @@ fn validate_cache_schema(connection: &Connection, path: &Path) -> Result<()> {
     if parsed != CACHE_SCHEMA_VERSION {
         anyhow::bail!(
             "unsupported cacheSchemaVersion {parsed}; expected {CACHE_SCHEMA_VERSION}; run `relaygraph cache rebuild`"
+        );
+    }
+    Ok(())
+}
+
+fn ensure_cache_path_contract(connection: &Connection, path: &Path) -> Result<()> {
+    for (label, sql) in [
+        ("resources.path", "SELECT path FROM resources"),
+        (
+            "resources.sidecar",
+            "SELECT sidecar FROM resources WHERE sidecar IS NOT NULL",
+        ),
+        (
+            "links.target_path",
+            "SELECT target_path FROM links WHERE target_path IS NOT NULL",
+        ),
+        (
+            "diagnostics.path",
+            "SELECT path FROM diagnostics WHERE path IS NOT NULL",
+        ),
+    ] {
+        let mut statement = connection.prepare(sql).with_context(|| {
+            format!(
+                "failed to inspect sqlite cache path contract for {label} in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+        let values = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .with_context(|| {
+                format!(
+                    "failed to read sqlite cache path values for {label} in {}; run `relaygraph cache rebuild`",
+                    display_path(path)
+                )
+        })?;
+        for value in values {
+            ensure_cache_repo_path_value(label, &value, path, true)?;
+        }
+    }
+
+    let mut statement = connection
+        .prepare("SELECT target_locator FROM links")
+        .with_context(|| {
+            format!(
+                "failed to inspect sqlite cache target locators in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+    let locators = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .with_context(|| {
+            format!(
+                "failed to read sqlite cache target locators in {}; run `relaygraph cache rebuild`",
+                display_path(path)
+            )
+        })?;
+    for locator in locators {
+        match parse_locator(&locator) {
+            Ok(Locator::Path(path_locator)) => {
+                ensure_cache_repo_path_value("links.target_locator", &path_locator, path, false)?;
+            }
+            Ok(Locator::Id(_)) => {}
+            Err(message) => anyhow::bail!(
+                "sqlite cache locator links.target_locator={locator:?} is invalid: {message}; run `relaygraph cache rebuild`"
+            ),
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_cache_repo_path_value(
+    label: &str,
+    value: &str,
+    cache_path: &Path,
+    require_normalized: bool,
+) -> Result<()> {
+    let normalized = normalize_repo_path_strict(value).map_err(|message| {
+        anyhow::anyhow!(
+            "sqlite cache path {label}={value:?} is invalid: {message} in {}; run `relaygraph cache rebuild`",
+            display_path(cache_path)
+        )
+    })?;
+    if require_normalized && normalized != value {
+        anyhow::bail!(
+            "sqlite cache path {label}={value:?} is not normalized as {normalized:?} in {}; run `relaygraph cache rebuild`",
+            display_path(cache_path)
+        );
+    }
+    if is_reserved_generated_path(&normalized) {
+        anyhow::bail!(
+            "sqlite cache path {label}={value:?} points into reserved generated directory in {}; run `relaygraph cache rebuild`",
+            display_path(cache_path)
         );
     }
     Ok(())
@@ -954,6 +1051,95 @@ mod tests {
         let message = format!("{:#}", result.unwrap_err());
         assert!(message.contains("foreign key links.source_path -> resources.path is missing"));
         assert!(message.contains("run `relaygraph cache rebuild`"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_invalid_resource_paths() {
+        let root = temp_root("relaygraph-cache-invalid-resource-path");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+
+        write_cache(&cache_path, &empty_graph()).unwrap();
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO resources (path, metadata_json) VALUES (?1, ?2)",
+                params!["../outside.md", "{}"],
+            )
+            .unwrap();
+        drop(connection);
+
+        let result = cache_resources(&cache_path, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("resources.path"));
+        assert!(message.contains("run `relaygraph cache rebuild`"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_rejects_reserved_link_paths() {
+        let root = temp_root("relaygraph-cache-reserved-link-path");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+
+        write_cache(&cache_path, &empty_graph()).unwrap();
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO resources (path, metadata_json) VALUES (?1, ?2)",
+                params!["a.md", "{}"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO links (source_path, rel, target_locator, target_path) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    "a.md",
+                    "x",
+                    "path:._relaygraph/generated/relaygraph.json",
+                    "._relaygraph/generated/relaygraph.json"
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        let result = cache_links(&cache_path, None, None, None);
+
+        assert!(result.is_err());
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("reserved generated directory"));
+        assert!(message.contains("run `relaygraph cache rebuild`"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_schema_validation_allows_normalizable_target_locators() {
+        let root = temp_root("relaygraph-cache-normalizable-target-locator");
+        fs::create_dir_all(&root).unwrap();
+        let cache_path = root.join("relaygraph.sqlite");
+
+        write_cache(&cache_path, &empty_graph()).unwrap();
+        let connection = Connection::open(&cache_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO resources (path, metadata_json) VALUES (?1, ?2)",
+                params!["a.md", "{}"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO links (source_path, rel, target_locator, target_path) VALUES (?1, ?2, ?3, ?4)",
+                params!["a.md", "x", "path:./a.md", "a.md"],
+            )
+            .unwrap();
+        drop(connection);
+
+        let links = cache_links(&cache_path, None, None, None).unwrap();
+
+        assert_eq!(links.len(), 1);
         let _ = fs::remove_dir_all(root);
     }
 

@@ -15,7 +15,7 @@ use crate::export::to_export;
 use crate::graph::build_graph;
 use crate::init::init_missing_sidecars;
 use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
-use crate::plugin::normalize_plugin_repo_path;
+use crate::plugin::configured_plugin_paths;
 use crate::repo::list_repo_files;
 use crate::trace::trace_from;
 use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
@@ -363,8 +363,8 @@ fn protected_repo_paths(
 ) -> Result<std::collections::BTreeSet<String>> {
     let mut paths = std::collections::BTreeSet::new();
     paths.insert(CONFIG_PATH.to_string());
-    for plugin in config.plugins.as_deref().unwrap_or(&[]) {
-        paths.insert(normalize_plugin_repo_path(plugin));
+    for plugin in configured_plugin_paths(config) {
+        paths.insert(plugin);
     }
     let suffix = crate::config::sidecar_suffix(config);
     for path in list_repo_files(root, config.use_git_ignore.unwrap_or(true))? {

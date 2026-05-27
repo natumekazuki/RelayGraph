@@ -8,6 +8,8 @@ use anyhow::{bail, Context, Result};
 use crate::model::Diagnostic;
 use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 
+const RESERVED_GENERATED_PREFIX: &str = "._relaygraph/";
+
 pub fn list_repo_files(root: &Path, use_git_ignore: bool) -> Result<Vec<String>> {
     list_repo_files_inner(root, use_git_ignore, None)
 }
@@ -91,6 +93,7 @@ fn list_repo_files_inner(
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .filter(|path| !path.is_empty())
+                .filter(|path| !is_reserved_generated_path(path))
                 .collect());
         }
         bail!(
@@ -115,21 +118,29 @@ fn collect_files(root: &Path, current: &Path, files: &mut Vec<String>) -> Result
         if file_name.to_string_lossy() == ".git" {
             continue;
         }
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        let repo_path = normalize_repo_path(relative.to_string_lossy());
+        if is_reserved_generated_path(&repo_path) {
+            continue;
+        }
         let metadata = fs::symlink_metadata(&path)
             .with_context(|| format!("failed to inspect {}", display_path(&path)))?;
         if is_repo_boundary_link(&metadata) {
-            let relative = path.strip_prefix(root).unwrap_or(&path);
-            files.push(normalize_repo_path(relative.to_string_lossy()));
+            files.push(repo_path);
             continue;
         }
         if metadata.is_dir() {
             collect_files(root, &path, files)?;
         } else if metadata.is_file() {
-            let relative = path.strip_prefix(root).unwrap_or(&path);
-            files.push(normalize_repo_path(relative.to_string_lossy()));
+            files.push(repo_path);
         }
     }
     Ok(())
+}
+
+pub(crate) fn is_reserved_generated_path(path: &str) -> bool {
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    path == "._relaygraph" || path.starts_with(RESERVED_GENERATED_PREFIX)
 }
 
 fn is_repo_file_or_boundary_declaration(root: &Path, repo_path: &str) -> Result<bool> {
