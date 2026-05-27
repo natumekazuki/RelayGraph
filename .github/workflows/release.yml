@@ -4,14 +4,33 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag, for example v0.1.0
+        description: Release tag, for example v1.0.0
         required: true
 
 jobs:
-  windows:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+  build:
+    name: Build (${{ matrix.artifact }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows-x64
+            binary: relaygraph.exe
+            archive: zip
+          - os: ubuntu-latest
+            artifact: linux-x64
+            binary: relaygraph
+            archive: tar.gz
+          - os: macos-13
+            artifact: macos-x64
+            binary: relaygraph
+            archive: tar.gz
+          - os: macos-latest
+            artifact: macos-arm64
+            binary: relaygraph
+            archive: tar.gz
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +43,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Verify release tag
-        id: verify
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag }}
@@ -37,7 +55,6 @@ jobs:
           if ($head -ne $tagCommit) {
             throw "Checked out commit $head does not match refs/tags/$env:RELEASE_TAG ($tagCommit)"
           }
-          "release_version=$($env:RELEASE_TAG.TrimStart('v'))" >> $env:GITHUB_OUTPUT
 
       - name: Format
         run: cargo fmt -- --check
@@ -60,29 +77,63 @@ jobs:
           $smoke = Join-Path $env:RUNNER_TEMP "relaygraph-release-smoke"
           New-Item -ItemType Directory -Force $smoke | Out-Null
           Push-Location $smoke
-          git init | Out-Null
-          Set-Content -Path README.md -Value "# Smoke"
-          & "${{ github.workspace }}\target\release\relaygraph.exe" validate --json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Pop-Location
+          try {
+            git init | Out-Null
+            Set-Content -Path README.md -Value "# Smoke"
+            & "${{ github.workspace }}/target/release/${{ matrix.binary }}" validate --json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Pop-Location
+          }
 
       - name: Package
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_ARTIFACT: ${{ matrix.artifact }}
+          RELEASE_ARCHIVE: ${{ matrix.archive }}
+          RELEASE_BINARY: ${{ matrix.binary }}
         run: |
+          $packageDir = Join-Path $env:RUNNER_TEMP "relaygraph-package"
+          New-Item -ItemType Directory -Force $packageDir | Out-Null
+          Copy-Item "${{ github.workspace }}/target/release/$env:RELEASE_BINARY" (Join-Path $packageDir $env:RELEASE_BINARY)
+
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/relaygraph.exe dist/relaygraph.exe
-          $zip = "relaygraph-$env:RELEASE_TAG-windows-x64.zip"
-          Compress-Archive -Path dist/relaygraph.exe -DestinationPath $zip -Force
-          $hash = Get-FileHash -Algorithm SHA256 $zip
-          "$($hash.Hash.ToLowerInvariant())  $zip" | Set-Content -Encoding UTF8 SHA256SUMS.txt
+          $archive = "relaygraph-$env:RELEASE_TAG-$env:RELEASE_ARTIFACT.$env:RELEASE_ARCHIVE"
+          $archivePath = Join-Path "dist" $archive
+          if ($env:RELEASE_ARCHIVE -eq "zip") {
+            Compress-Archive -Path (Join-Path $packageDir $env:RELEASE_BINARY) -DestinationPath $archivePath -Force
+          } else {
+            tar -czf $archivePath -C $packageDir $env:RELEASE_BINARY
+          }
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relaygraph-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum relaygraph-${{ inputs.tag }}-* > SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
           name: RelayGraph ${{ inputs.tag }}
-          files: |
-            relaygraph-${{ inputs.tag }}-windows-x64.zip
-            SHA256SUMS.txt
+          files: dist/*

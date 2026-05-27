@@ -2,7 +2,7 @@
 
 RelayGraph is a Rust CLI that builds a deterministic resource graph from Git-backed YAML declarations.
 
-v1.0.0 is the initial Windows x64 release. Linux and macOS are validated in CI, but official release artifacts start with Windows x64.
+v1.0.0 is the initial release, with Windows x64, Linux x64, macOS x64, and macOS arm64 artifacts.
 
 The source of truth is always the repository content:
 

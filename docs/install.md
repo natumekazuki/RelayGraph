@@ -1,6 +1,6 @@
 # Install and Release
 
-RelayGraph v1.0.0 is the initial Windows x64 release. The published artifact is named `relaygraph-<tag>-windows-x64.zip`; Linux and macOS are validated in CI but do not have official binary artifacts yet.
+RelayGraph v1.0.0 is the initial release. Published artifacts are named `relaygraph-<tag>-<platform>.<archive>`.
 
 ## Local Install
 
@@ -32,7 +32,7 @@ cargo build --locked --release
 .\target\release\relaygraph.exe --help
 ```
 
-The Windows binary is:
+The local Windows binary is:
 
 ```text
 target/release/relaygraph.exe
@@ -66,10 +66,13 @@ Input:
 tag = v1.0.0
 ```
 
-The workflow builds `relaygraph.exe` on `windows-latest` and uploads:
+The workflow builds and uploads:
 
 ```text
 relaygraph-<tag>-windows-x64.zip
+relaygraph-<tag>-linux-x64.tar.gz
+relaygraph-<tag>-macos-x64.tar.gz
+relaygraph-<tag>-macos-arm64.tar.gz
 SHA256SUMS.txt
 ```
 
@@ -88,11 +91,20 @@ cargo run --locked -- validate
 cargo run --locked -- cache rebuild
 cargo run --locked -- cache diagnostics
 
-# 2. Commit any release notes or metadata updates, then create and push the tag.
+# 2. Merge any release notes or metadata updates into the protected default branch.
+
+# 3. Create and push the tag from the protected branch tip.
+git switch <default-branch>
+git pull --ff-only origin <default-branch>
 git tag v1.0.0
-git push origin <default-branch>
 git push origin v1.0.0
 ```
 
 Then run the manual `Release` workflow with the same tag, for example `v1.0.0`.
 The workflow verifies tag format and tag checkout integrity before building or publishing artifacts. It does not require the tag to match `Cargo.toml` version.
+
+When direct pushes to `master` are disabled, release changes go through a normal
+pull request first. After the PR is merged, create the release tag locally from
+the updated protected branch tip and push only the tag. The manual `Release`
+workflow checks out `refs/tags/<tag>`, so the release artifact is built from the
+tagged commit, not from the branch used to dispatch the workflow.
