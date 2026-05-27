@@ -1,6 +1,6 @@
 # Install and Release
 
-RelayGraph v0.1.0 is a Windows x64 preview release. The published artifact is `relaygraph-windows-x64.zip`; Linux and macOS are not official release targets yet.
+RelayGraph v0.1.0 is a Windows x64 preview release. The published artifact is named `relaygraph-<tag>-windows-x64.zip`; Linux and macOS are validated in CI but do not have official binary artifacts yet.
 
 ## Local Install
 
@@ -47,7 +47,14 @@ cargo fmt -- --check
 cargo test --locked
 cargo clippy --all-targets --all-features -- -D warnings
 cargo run --locked -- validate
+cargo run --locked -- cache rebuild
+cargo run --locked -- cache diagnostics
+cargo build --locked --release
 ```
+
+CI runs on `windows-latest`, `ubuntu-latest`, and `macos-latest`. It can also be started manually with `workflow_dispatch`.
+
+`.github/workflows/security.yml` runs `cargo audit` on a weekly schedule and manual dispatch. Dependabot checks Cargo and GitHub Actions updates weekly.
 
 ## GitHub Release
 
@@ -62,15 +69,18 @@ tag = v0.1.0
 The workflow builds `relaygraph.exe` on `windows-latest` and uploads:
 
 ```text
-relaygraph-windows-x64.zip
+relaygraph-<tag>-windows-x64.zip
+SHA256SUMS.txt
 ```
+
+The release version comes from the Git tag. `Cargo.toml` package version is metadata and does not gate the GitHub Release artifact version.
 
 ## Versioning Checklist
 
 Before creating a release:
 
 ```powershell
-# 1. Update Cargo.toml version first.
+# 1. Run local release checks.
 cargo fmt -- --check
 cargo test --locked
 cargo clippy --all-targets --all-features -- -D warnings
@@ -78,13 +88,11 @@ cargo run --locked -- validate
 cargo run --locked -- cache rebuild
 cargo run --locked -- cache diagnostics
 
-# 2. Commit the version update, create the matching tag, and push both.
-git add Cargo.toml Cargo.lock
-git commit -m "chore: release v0.1.0"
+# 2. Commit any release notes or metadata updates, then create and push the tag.
 git tag v0.1.0
 git push origin <default-branch>
 git push origin v0.1.0
 ```
 
 Then run the manual `Release` workflow with the same tag, for example `v0.1.0`.
-The workflow verifies that the input tag matches `Cargo.toml` (`version = "0.1.0"` requires tag `v0.1.0`) before building or publishing artifacts.
+The workflow verifies tag format and tag checkout integrity before building or publishing artifacts. It does not require the tag to match `Cargo.toml` version.

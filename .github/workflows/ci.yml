@@ -6,6 +6,7 @@ on:
       - main
       - master
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,7 +14,15 @@ concurrency:
 
 jobs:
   rust:
-    runs-on: windows-latest
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -34,3 +43,12 @@ jobs:
 
       - name: Validate RelayGraph
         run: cargo run --locked -- validate
+
+      - name: Rebuild cache
+        run: cargo run --locked -- cache rebuild
+
+      - name: Check cache diagnostics
+        run: cargo run --locked -- cache diagnostics
+
+      - name: Release build
+        run: cargo build --locked --release

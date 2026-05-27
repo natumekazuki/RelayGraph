@@ -19,11 +19,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Verify release tag matches Cargo version
+      - name: Verify release tag
+        id: verify
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag }}
@@ -31,18 +32,15 @@ jobs:
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Invalid release tag format: $env:RELEASE_TAG"
           }
-          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
-          $package = $metadata.packages | Where-Object { $_.name -eq "relaygraph" } | Select-Object -First 1
-          if (-not $package) { throw "relaygraph package not found in cargo metadata" }
-          $expectedTag = "v$($package.version)"
-          if ($env:RELEASE_TAG -ne $expectedTag) {
-            throw "Release tag $env:RELEASE_TAG does not match Cargo.toml version $($package.version); expected $expectedTag"
-          }
           $head = git rev-parse HEAD
           $tagCommit = git rev-list -n 1 "refs/tags/$env:RELEASE_TAG"
           if ($head -ne $tagCommit) {
             throw "Checked out commit $head does not match refs/tags/$env:RELEASE_TAG ($tagCommit)"
           }
+          "release_version=$($env:RELEASE_TAG.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+
+      - name: Format
+        run: cargo fmt -- --check
 
       - name: Test
         run: cargo test --locked
@@ -70,13 +68,21 @@ jobs:
 
       - name: Package
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/relaygraph.exe dist/relaygraph.exe
-          Compress-Archive -Path dist/relaygraph.exe -DestinationPath relaygraph-windows-x64.zip -Force
+          $zip = "relaygraph-$env:RELEASE_TAG-windows-x64.zip"
+          Compress-Archive -Path dist/relaygraph.exe -DestinationPath $zip -Force
+          $hash = Get-FileHash -Algorithm SHA256 $zip
+          "$($hash.Hash.ToLowerInvariant())  $zip" | Set-Content -Encoding UTF8 SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
-          files: relaygraph-windows-x64.zip
+          name: RelayGraph ${{ inputs.tag }}
+          files: |
+            relaygraph-${{ inputs.tag }}-windows-x64.zip
+            SHA256SUMS.txt
