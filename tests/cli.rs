@@ -649,6 +649,30 @@ fn default_outputs_can_be_rebuilt_when_generated_dir_is_not_excluded() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(unix)]
+#[test]
+fn outputs_allow_symlink_ancestors_above_repository_root() {
+    use std::os::unix::fs::symlink;
+
+    let base = temp_root("relaygraph-output-ancestor-symlink");
+    let real = base.join("real");
+    let alias = base.join("alias");
+    fs::create_dir_all(&real).unwrap();
+    symlink(&real, &alias).unwrap();
+
+    let root = alias.join("repo");
+    create_fixture_repo(&root);
+    let export_path = root.join("graph.json");
+
+    assert_success(run(
+        &root,
+        ["export", "--output", export_path.to_str().unwrap()],
+    ));
+    assert!(real.join("repo/graph.json").exists());
+
+    let _ = fs::remove_dir_all(base);
+}
+
 #[test]
 fn configured_plugins_are_declarations_not_resources() {
     let root = temp_root("relaygraph-plugin-declaration-not-resource");

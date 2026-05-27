@@ -292,11 +292,10 @@ fn guard_output(
             .context("failed to resolve current directory")?
             .join(output)
     };
-    reject_boundary_output_path(&raw_absolute_output)?;
+    reject_boundary_output_path(root, &raw_absolute_output)?;
 
     let absolute_output = normalize_existing_path_for_comparison(&raw_absolute_output)?;
     let normalized_root = normalize_existing_path_for_comparison(root)?;
-    reject_boundary_output_path(&absolute_output)?;
 
     if let Ok(relative) = absolute_output.strip_prefix(&normalized_root) {
         let repo_path = normalize_repo_path(relative.to_string_lossy());
@@ -318,15 +317,23 @@ fn guard_output(
     Ok(())
 }
 
-fn reject_boundary_output_path(output: &std::path::Path) -> Result<()> {
-    for path in output.ancestors() {
-        let Ok(metadata) = fs::symlink_metadata(path) else {
+fn reject_boundary_output_path(root: &std::path::Path, output: &std::path::Path) -> Result<()> {
+    let root = normalize_path_components(root);
+    let output = normalize_path_components(output);
+    let Ok(relative_output) = output.strip_prefix(&root) else {
+        return Ok(());
+    };
+
+    let mut current = root;
+    for component in relative_output.components() {
+        current.push(component.as_os_str());
+        let Ok(metadata) = fs::symlink_metadata(&current) else {
             continue;
         };
         if is_repo_boundary_link(&metadata) {
             anyhow::bail!(
                 "refusing to write output through symlink or reparse point {}",
-                display_path(path)
+                display_path(&current)
             );
         }
     }
