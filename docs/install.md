@@ -1,6 +1,6 @@
 # Install and Release
 
-RelayGraph v0.1.0 is a Windows x64 preview release. The published artifact is named `relaygraph-<tag>-windows-x64.zip`; Linux and macOS are validated in CI but do not have official binary artifacts yet.
+RelayGraph v1.0.0 is the initial Windows x64 release. The published artifact is named `relaygraph-<tag>-windows-x64.zip`; Linux and macOS are validated in CI but do not have official binary artifacts yet.
 
 ## Local Install
 
@@ -63,7 +63,7 @@ Use the manual `Release` workflow.
 Input:
 
 ```text
-tag = v0.1.0
+tag = v1.0.0
 ```
 
 The workflow builds `relaygraph.exe` on `windows-latest` and uploads:
@@ -89,10 +89,10 @@ cargo run --locked -- cache rebuild
 cargo run --locked -- cache diagnostics
 
 # 2. Commit any release notes or metadata updates, then create and push the tag.
-git tag v0.1.0
+git tag v1.0.0
 git push origin <default-branch>
-git push origin v0.1.0
+git push origin v1.0.0
 ```
 
-Then run the manual `Release` workflow with the same tag, for example `v0.1.0`.
+Then run the manual `Release` workflow with the same tag, for example `v1.0.0`.
 The workflow verifies tag format and tag checkout integrity before building or publishing artifacts. It does not require the tag to match `Cargo.toml` version.

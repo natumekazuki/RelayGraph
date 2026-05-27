@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: natumekazuki/RelayGraph@v0.1.0
+      - uses: natumekazuki/RelayGraph@v1.0.0
         with:
           export: "true"
           cache: "true"
@@ -33,7 +33,7 @@ platform.
 For a monorepo or nested project, set `working-directory`:
 
 ```yaml
-      - uses: natumekazuki/RelayGraph@v0.1.0
+      - uses: natumekazuki/RelayGraph@v1.0.0
         with:
           working-directory: tools/my-project
           export: "true"
