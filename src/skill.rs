@@ -67,12 +67,15 @@ fn remove_existing_skill(target: &Path) -> Result<()> {
             );
         }
         Ok(metadata) if metadata.is_dir() => {
+            ensure_existing_relaygraph_skill(target)?;
             fs::remove_dir_all(target)
                 .with_context(|| format!("failed to remove {}", display_path(target)))?;
         }
         Ok(_) => {
-            fs::remove_file(target)
-                .with_context(|| format!("failed to remove {}", display_path(target)))?;
+            anyhow::bail!(
+                "refusing to replace non-directory skill target {}",
+                display_path(target)
+            );
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => {
@@ -81,4 +84,81 @@ fn remove_existing_skill(target: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn ensure_existing_relaygraph_skill(target: &Path) -> Result<()> {
+    let skill_md = target.join("SKILL.md");
+    let metadata = match fs::symlink_metadata(&skill_md) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            anyhow::bail!(
+                "refusing to replace non-RelayGraph skill directory {}; SKILL.md is missing",
+                display_path(target)
+            );
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!(
+                    "failed to inspect existing skill {}",
+                    display_path(&skill_md)
+                )
+            });
+        }
+    };
+    if is_repo_boundary_link(&metadata) || !metadata.is_file() {
+        anyhow::bail!(
+            "refusing to replace non-RelayGraph skill directory {}; SKILL.md is not a regular file",
+            display_path(target)
+        );
+    }
+
+    let content = fs::read_to_string(&skill_md)
+        .with_context(|| format!("failed to read {}", display_path(&skill_md)))?;
+    if !has_relaygraph_skill_name(&content) {
+        anyhow::bail!(
+            "refusing to replace non-RelayGraph skill directory {}; SKILL.md name is not relaygraph",
+            display_path(target)
+        );
+    }
+    Ok(())
+}
+
+fn has_relaygraph_skill_name(content: &str) -> bool {
+    let mut lines = content.lines();
+    if lines.next() != Some("---") {
+        return false;
+    }
+
+    for line in lines {
+        if line == "---" {
+            return false;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key.trim() != "name" {
+            continue;
+        }
+        return value.trim().trim_matches('"').trim_matches('\'') == SKILL_NAME;
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_relaygraph_skill_frontmatter_name() {
+        assert!(has_relaygraph_skill_name(
+            "---\nname: relaygraph\ndescription: x\n---\n"
+        ));
+        assert!(has_relaygraph_skill_name(
+            "---\nname: \"relaygraph\"\ndescription: x\n---\n"
+        ));
+        assert!(!has_relaygraph_skill_name(
+            "---\nname: other\ndescription: x\n---\n"
+        ));
+        assert!(!has_relaygraph_skill_name("name: relaygraph\n"));
+    }
 }
