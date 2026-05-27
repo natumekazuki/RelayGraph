@@ -23,10 +23,6 @@ jobs:
             artifact: linux-x64
             binary: relaygraph
             archive: tar.gz
-          - os: macos-13
-            artifact: macos-x64
-            binary: relaygraph
-            archive: tar.gz
           - os: macos-latest
             artifact: macos-arm64
             binary: relaygraph

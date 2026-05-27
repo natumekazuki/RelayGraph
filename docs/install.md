@@ -71,7 +71,6 @@ The workflow builds and uploads:
 ```text
 relaygraph-<tag>-windows-x64.zip
 relaygraph-<tag>-linux-x64.tar.gz
-relaygraph-<tag>-macos-x64.tar.gz
 relaygraph-<tag>-macos-arm64.tar.gz
 SHA256SUMS.txt
 ```
