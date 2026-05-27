@@ -1,5 +1,7 @@
 # Install and Release
 
+RelayGraph v0.1.0 is a Windows x64 preview release. The published artifact is `relaygraph-windows-x64.zip`; Linux and macOS are not official release targets yet.
+
 ## Local Install
 
 Prerequisites:

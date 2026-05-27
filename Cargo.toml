@@ -2,6 +2,11 @@
 name = "relaygraph"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
+description = "Build deterministic resource graphs from Git-backed YAML declarations"
+repository = "https://github.com/natumekazuki/RelayGraph"
+readme = "README.md"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
