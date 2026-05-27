@@ -37,6 +37,7 @@ cargo run -- cache links --from id:docs.design.relaygraph
 cargo run -- cache trace id:docs.design.relaygraph
 cargo run -- cache trace path:src/main.rs --direction incoming
 cargo run -- cache diagnostics
+cargo run -- skill install --to .codex/skills
 ```
 
 `init` only creates sidecars for paths matched by `requireSidecar`. With the default `requireSidecar: []`, it is expected to be a no-op.

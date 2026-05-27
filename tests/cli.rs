@@ -58,6 +58,30 @@ fn cli_validates_exports_caches_and_traces_fixture_repo() {
 }
 
 #[test]
+fn skill_install_recreates_saved_skill_directory() {
+    let root = temp_root("relaygraph-skill-install");
+    let skills_dir = root.join("skills");
+    let saved_skill = skills_dir.join("relaygraph");
+    fs::create_dir_all(saved_skill.join("stale")).unwrap();
+    fs::write(saved_skill.join("stale/file.txt"), "old\n").unwrap();
+
+    let output = run(
+        &root,
+        ["skill", "install", "--to", skills_dir.to_str().unwrap()],
+    );
+
+    assert_success_with_stdout(output, "installed relaygraph skill to");
+    assert!(saved_skill.join("SKILL.md").exists());
+    assert!(saved_skill.join("agents/openai.yaml").exists());
+    assert!(saved_skill.join("references/cli.md").exists());
+    assert!(saved_skill.join("references/repository-rules.md").exists());
+    assert!(saved_skill.join("references/sidecar-v1.md").exists());
+    assert!(!saved_skill.join("stale/file.txt").exists());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn default_feature_trace_plugin_is_embedded_for_fresh_repo() {
     let root = temp_root("relaygraph-embedded-plugin");
     fs::create_dir_all(root.join("docs")).unwrap();

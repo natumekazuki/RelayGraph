@@ -9,5 +9,6 @@ pub mod locator;
 pub mod model;
 pub mod plugin;
 pub mod repo;
+pub mod skill;
 pub mod trace;
 pub mod util;

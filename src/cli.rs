@@ -17,6 +17,7 @@ use crate::init::init_missing_sidecars;
 use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
 use crate::plugin::configured_plugin_paths;
 use crate::repo::list_repo_files;
+use crate::skill::install_skill;
 use crate::trace::trace_from;
 use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 
@@ -63,6 +64,11 @@ enum Commands {
         /// Print files that would be created without writing them.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Install bundled AI-agent assets.
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommands,
     },
 }
 
@@ -129,11 +135,25 @@ enum CacheCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum SkillCommands {
+    /// Install the bundled RelayGraph Skill into a skills directory.
+    Install {
+        /// Skills directory where relaygraph/ will be recreated.
+        #[arg(long, value_name = "DIR")]
+        to: PathBuf,
+    },
+}
+
 pub fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
+    let command = match cli.command {
+        Commands::Skill { command } => return skill_command(command),
+        command => command,
+    };
+
     let current_dir = std::env::current_dir().context("failed to resolve current directory")?;
     let root = resolve_repo_root(&current_dir)?;
-    let command = cli.command;
 
     if matches!(
         &command,
@@ -172,6 +192,17 @@ pub fn run() -> Result<ExitCode> {
         Commands::Trace { from, direction } => trace_command(&root, &config, &from, direction),
         Commands::Cache { command } => cache_rebuild_command(&root, &config, command),
         Commands::Init { dry_run } => init_command(&root, &config, dry_run),
+        Commands::Skill { .. } => unreachable!("skill commands are handled before config loading"),
+    }
+}
+
+fn skill_command(command: SkillCommands) -> Result<ExitCode> {
+    match command {
+        SkillCommands::Install { to } => {
+            let target = install_skill(&to)?;
+            println!("installed relaygraph skill to {}", display_path(&target));
+            Ok(ExitCode::SUCCESS)
+        }
     }
 }
 
