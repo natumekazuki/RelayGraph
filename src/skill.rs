@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 
@@ -38,10 +39,23 @@ const SKILL_FILES: &[SkillFile] = &[
 
 pub fn install_skill(skills_dir: &Path) -> Result<PathBuf> {
     let target = skills_dir.join(SKILL_NAME);
-    remove_existing_skill(&target)?;
-    fs::create_dir_all(&target)
-        .with_context(|| format!("failed to create {}", display_path(&target)))?;
+    validate_existing_skill_target(&target)?;
+    fs::create_dir_all(skills_dir)
+        .with_context(|| format!("failed to create {}", display_path(skills_dir)))?;
 
+    let temp = unique_child_path(skills_dir, ".relaygraph-install")?;
+    fs::create_dir(&temp).with_context(|| format!("failed to create {}", display_path(&temp)))?;
+
+    let result = write_skill_files(&temp).and_then(|()| replace_skill_dir(&target, &temp));
+    if result.is_err() {
+        let _ = cleanup_install_dir(&temp);
+    }
+    result?;
+
+    Ok(target)
+}
+
+fn write_skill_files(target: &Path) -> Result<()> {
     for file in SKILL_FILES {
         let path = target.join(file.path);
         if let Some(parent) = path
@@ -54,11 +68,85 @@ pub fn install_skill(skills_dir: &Path) -> Result<PathBuf> {
         fs::write(&path, file.contents)
             .with_context(|| format!("failed to write {}", display_path(&path)))?;
     }
-
-    Ok(target)
+    Ok(())
 }
 
-fn remove_existing_skill(target: &Path) -> Result<()> {
+fn replace_skill_dir(target: &Path, temp: &Path) -> Result<()> {
+    let parent = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .context("skill target must have a parent directory")?;
+    let backup = unique_child_path(parent, ".relaygraph-backup")?;
+    let had_existing = target.exists();
+
+    if had_existing {
+        fs::rename(target, &backup).with_context(|| {
+            format!(
+                "failed to move existing skill {} to backup {}",
+                display_path(target),
+                display_path(&backup)
+            )
+        })?;
+    }
+
+    match fs::rename(temp, target) {
+        Ok(()) => {
+            if had_existing {
+                cleanup_install_dir(&backup).with_context(|| {
+                    format!("failed to remove backup {}", display_path(&backup))
+                })?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if had_existing {
+                restore_backup(target, &backup, &error)?;
+            }
+            Err(error).with_context(|| {
+                format!(
+                    "failed to install skill {} from {}",
+                    display_path(target),
+                    display_path(temp)
+                )
+            })
+        }
+    }
+}
+
+fn restore_backup(target: &Path, backup: &Path, install_error: &std::io::Error) -> Result<()> {
+    fs::rename(backup, target).with_context(|| {
+        format!(
+            "failed to restore previous skill {} after install failure ({install_error})",
+            display_path(target)
+        )
+    })
+}
+
+fn cleanup_install_dir(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if is_repo_boundary_link(&metadata) => {
+            anyhow::bail!(
+                "refusing to remove symlink or reparse point {}",
+                display_path(path)
+            );
+        }
+        Ok(metadata) if metadata.is_dir() => {
+            fs::remove_dir_all(path)
+                .with_context(|| format!("failed to remove {}", display_path(path)))?;
+        }
+        Ok(_) => {
+            fs::remove_file(path)
+                .with_context(|| format!("failed to remove {}", display_path(path)))?;
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to inspect {}", display_path(path)));
+        }
+    }
+    Ok(())
+}
+
+fn validate_existing_skill_target(target: &Path) -> Result<()> {
     match fs::symlink_metadata(target) {
         Ok(metadata) if is_repo_boundary_link(&metadata) => {
             anyhow::bail!(
@@ -68,8 +156,6 @@ fn remove_existing_skill(target: &Path) -> Result<()> {
         }
         Ok(metadata) if metadata.is_dir() => {
             ensure_existing_relaygraph_skill(target)?;
-            fs::remove_dir_all(target)
-                .with_context(|| format!("failed to remove {}", display_path(target)))?;
         }
         Ok(_) => {
             anyhow::bail!(
@@ -84,6 +170,28 @@ fn remove_existing_skill(target: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn unique_child_path(parent: &Path, prefix: &str) -> Result<PathBuf> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    for counter in 0..1000 {
+        let candidate = parent.join(format!("{prefix}-{}-{nanos}-{counter}", std::process::id()));
+        match fs::symlink_metadata(&candidate) {
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(candidate),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to inspect {}", display_path(&candidate)));
+            }
+            Ok(_) => {}
+        }
+    }
+    anyhow::bail!(
+        "failed to allocate temporary install path under {}",
+        display_path(parent)
+    );
 }
 
 fn ensure_existing_relaygraph_skill(target: &Path) -> Result<()> {
@@ -160,5 +268,36 @@ mod tests {
             "---\nname: other\ndescription: x\n---\n"
         ));
         assert!(!has_relaygraph_skill_name("name: relaygraph\n"));
+    }
+
+    #[test]
+    fn replace_restores_previous_skill_when_new_dir_move_fails() {
+        let root = std::env::temp_dir().join(format!(
+            "relaygraph-skill-restore-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let target = root.join("relaygraph");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(
+            target.join("SKILL.md"),
+            "---\nname: relaygraph\ndescription: old\n---\n",
+        )
+        .unwrap();
+        fs::write(target.join("old.txt"), "old\n").unwrap();
+
+        let missing_temp = root.join("missing-temp");
+        let result = replace_skill_dir(&target, &missing_temp);
+
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(target.join("SKILL.md")).unwrap(),
+            "---\nname: relaygraph\ndescription: old\n---\n"
+        );
+        assert_eq!(fs::read_to_string(target.join("old.txt")).unwrap(), "old\n");
+
+        let _ = fs::remove_dir_all(root);
     }
 }
