@@ -25,6 +25,39 @@ Cargo installs the binary under:
 
 Make sure that directory is in `PATH`.
 
+## AI Agent Skill
+
+This repository also distributes a RelayGraph Skill for AI agents:
+
+```text
+.agents/skills/relaygraph/
+```
+
+After installing the RelayGraph CLI, install or refresh the bundled Skill into
+your Codex skills directory:
+
+```powershell
+$target = if ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME "skills" } else { Join-Path $HOME ".codex\skills" }
+relaygraph skill install --to $target
+```
+
+The command recreates `$target/relaygraph`, so an older saved RelayGraph Skill is
+removed before the bundled Skill is written again.
+
+To install it into Claude Code's personal Skill directory:
+
+```powershell
+relaygraph skill install --to (Join-Path $HOME ".claude\skills")
+```
+
+For a project-local Claude Code Skill:
+
+```powershell
+relaygraph skill install --to .claude/skills
+```
+
+Restart the agent session after copying so the Skill metadata is rediscovered.
+
 ## Local Release Build
 
 ```powershell

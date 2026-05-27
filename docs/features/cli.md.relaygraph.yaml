@@ -8,6 +8,9 @@ links:
   - rel: realized-by
     to: path:src/cli.rs
     order: 20
+  - rel: realized-by
+    to: path:src/skill.rs
+    order: 25
   - rel: verified-by
     to: path:tests/cli.rs
     order: 30

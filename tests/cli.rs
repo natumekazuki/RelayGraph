@@ -58,6 +58,119 @@ fn cli_validates_exports_caches_and_traces_fixture_repo() {
 }
 
 #[test]
+fn skill_install_recreates_saved_skill_directory() {
+    let root = temp_root("relaygraph-skill-install");
+    let skills_dir = root.join("skills");
+    let saved_skill = skills_dir.join("relaygraph");
+    fs::create_dir_all(saved_skill.join("stale")).unwrap();
+    fs::write(
+        saved_skill.join("SKILL.md"),
+        "---\nname: relaygraph\ndescription: old\n---\n",
+    )
+    .unwrap();
+    fs::write(saved_skill.join("stale/file.txt"), "old\n").unwrap();
+
+    let output = run(
+        &root,
+        ["skill", "install", "--to", skills_dir.to_str().unwrap()],
+    );
+
+    assert_success_with_stdout(output, "installed relaygraph skill to");
+    assert!(saved_skill.join("SKILL.md").exists());
+    assert!(saved_skill.join("agents/openai.yaml").exists());
+    assert!(saved_skill.join("references/cli.md").exists());
+    assert!(saved_skill.join("references/repository-rules.md").exists());
+    assert!(saved_skill.join("references/sidecar-v1.md").exists());
+    assert!(!saved_skill.join("stale/file.txt").exists());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn skill_install_refuses_to_replace_non_skill_directory() {
+    let root = temp_root("relaygraph-skill-install-refuse");
+    let existing = root.join("relaygraph");
+    fs::create_dir_all(existing.join("plugins")).unwrap();
+    fs::write(existing.join("plugins/feature-trace.yaml"), "keep: true\n").unwrap();
+    fs::write(existing.join("plugins/other.yaml"), "keep-too: true\n").unwrap();
+
+    let output = run(&root, ["skill", "install", "--to", "."]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to replace non-RelayGraph skill directory"),
+        "stderr:\n{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(existing.join("plugins/feature-trace.yaml")).unwrap(),
+        "keep: true\n"
+    );
+    assert_eq!(
+        fs::read_to_string(existing.join("plugins/other.yaml")).unwrap(),
+        "keep-too: true\n"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn skill_install_refuses_to_replace_different_skill_name() {
+    let root = temp_root("relaygraph-skill-install-wrong-name");
+    let skills_dir = root.join("skills");
+    let existing = skills_dir.join("relaygraph");
+    fs::create_dir_all(&existing).unwrap();
+    fs::write(
+        existing.join("SKILL.md"),
+        "---\nname: other\ndescription: old\n---\n",
+    )
+    .unwrap();
+    fs::write(existing.join("keep.txt"), "keep\n").unwrap();
+
+    let output = run(
+        &root,
+        ["skill", "install", "--to", skills_dir.to_str().unwrap()],
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("SKILL.md name is not relaygraph"),
+        "stderr:\n{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(existing.join("keep.txt")).unwrap(),
+        "keep\n"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn skill_install_refuses_to_replace_non_directory_target() {
+    let root = temp_root("relaygraph-skill-install-file-target");
+    let skills_dir = root.join("skills");
+    fs::create_dir_all(&skills_dir).unwrap();
+    let existing = skills_dir.join("relaygraph");
+    fs::write(&existing, "keep\n").unwrap();
+
+    let output = run(
+        &root,
+        ["skill", "install", "--to", skills_dir.to_str().unwrap()],
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to replace non-directory skill target"),
+        "stderr:\n{stderr}"
+    );
+    assert_eq!(fs::read_to_string(existing).unwrap(), "keep\n");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn default_feature_trace_plugin_is_embedded_for_fresh_repo() {
     let root = temp_root("relaygraph-embedded-plugin");
     fs::create_dir_all(root.join("docs")).unwrap();

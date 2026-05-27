@@ -1,0 +1,10 @@
+schemaVersion: 1
+id: agents.skills.relaygraph
+kind: design-doc
+links:
+  - rel: realized-by
+    to: path:src/skill.rs
+    order: 10
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 20
