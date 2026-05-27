@@ -1,0 +1,113 @@
+name: RelayGraph
+description: Install RelayGraph and validate Git-backed graph declarations.
+inputs:
+  ref:
+    description: RelayGraph git ref to install. Defaults to the action ref.
+    required: false
+    default: ""
+  repository:
+    description: RelayGraph repository to install from. Defaults to this action repository.
+    required: false
+    default: ""
+  working-directory:
+    description: Repository directory that contains .relaygraph.yaml.
+    required: false
+    default: "."
+  export:
+    description: Run relaygraph export after validate.
+    required: false
+    default: "false"
+  cache:
+    description: Run relaygraph cache rebuild and diagnostics after validate.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: false
+
+    - name: Install RelayGraph
+      shell: pwsh
+      run: |
+        $repository = "${{ inputs.repository }}".Trim()
+        if ([string]::IsNullOrWhiteSpace($repository)) {
+          $repository = "https://github.com/${{ github.action_repository }}"
+        } elseif ($repository -notmatch '^https?://') {
+          $repository = "https://github.com/$repository"
+        }
+
+        $ref = "${{ inputs.ref }}".Trim()
+        if ([string]::IsNullOrWhiteSpace($ref)) {
+          $ref = "${{ github.action_ref }}".Trim()
+        }
+        if ([string]::IsNullOrWhiteSpace($ref)) {
+          $ref = "${{ github.ref_name }}".Trim()
+        }
+        if ([string]::IsNullOrWhiteSpace($ref)) {
+          throw "RelayGraph install ref is empty. Pin the action with @vX.Y.Z or pass ref."
+        }
+
+        $installArgs = @("install", "--git", $repository, "--locked")
+        if ($ref -match '^refs/tags/(.+)$') {
+          $installArgs += @("--tag", $Matches[1])
+        } elseif ($ref -match '^v\d+\.\d+\.\d+([.-].+)?$') {
+          $installArgs += @("--tag", $ref)
+        } elseif ($ref -match '^[0-9a-fA-F]{7,40}$') {
+          $installArgs += @("--rev", $ref)
+        } else {
+          $installArgs += @("--branch", $ref)
+        }
+
+        cargo @installArgs
+        if ($LASTEXITCODE -ne 0) {
+          exit $LASTEXITCODE
+        }
+
+    - name: Validate RelayGraph
+      shell: pwsh
+      run: |
+        Push-Location '${{ inputs.working-directory }}'
+        try {
+          relaygraph validate --json
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+        } finally {
+          Pop-Location
+        }
+
+    - name: Export RelayGraph
+      if: ${{ inputs.export == 'true' }}
+      shell: pwsh
+      run: |
+        Push-Location '${{ inputs.working-directory }}'
+        try {
+          relaygraph export
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+        } finally {
+          Pop-Location
+        }
+
+    - name: Rebuild RelayGraph cache
+      if: ${{ inputs.cache == 'true' }}
+      shell: pwsh
+      run: |
+        Push-Location '${{ inputs.working-directory }}'
+        try {
+          relaygraph cache rebuild
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          relaygraph cache diagnostics
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+        } finally {
+          Pop-Location
+        }

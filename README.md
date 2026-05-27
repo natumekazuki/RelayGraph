@@ -58,6 +58,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ## More Docs
 
+- `docs/ci.md`
 - `docs/install.md`
 - `docs/plugins.md`
 - `docs/schema/`

@@ -1,0 +1,10 @@
+schemaVersion: 1
+id: docs.ci
+kind: design-doc
+links:
+  - rel: realized-by
+    to: path:action.yml
+    order: 10
+  - rel: realized-by
+    to: path:.github/workflows/ci.yml
+    order: 20
