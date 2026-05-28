@@ -171,7 +171,7 @@ pub fn generated_id_for_path(path: &str) -> String {
     }
 }
 
-fn unique_generated_id_for_path(path: &str, used_ids: &mut BTreeSet<String>) -> String {
+pub(crate) fn unique_generated_id_for_path(path: &str, used_ids: &mut BTreeSet<String>) -> String {
     let base = generated_id_for_path(path);
     if used_ids.insert(base.clone()) {
         return base;
@@ -186,7 +186,11 @@ fn unique_generated_id_for_path(path: &str, used_ids: &mut BTreeSet<String>) -> 
     candidate
 }
 
-fn existing_sidecar_ids(root: &Path, files: &[String], suffix: &str) -> BTreeSet<String> {
+pub(crate) fn existing_sidecar_ids(
+    root: &Path,
+    files: &[String],
+    suffix: &str,
+) -> BTreeSet<String> {
     files
         .iter()
         .filter(|path| path.ends_with(suffix))

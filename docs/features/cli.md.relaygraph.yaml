@@ -11,6 +11,9 @@ links:
   - rel: realized-by
     to: path:src/skill.rs
     order: 25
+  - rel: realized-by
+    to: path:src/generate.rs
+    order: 27
   - rel: verified-by
     to: path:tests/cli.rs
     order: 30

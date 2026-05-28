@@ -12,6 +12,7 @@ use crate::cache::{
 use crate::config::load_config;
 use crate::diagnostic::print_diagnostics;
 use crate::export::to_export;
+use crate::generate::{generate_sidecar, parse_generate_link, GenerateOptions};
 use crate::graph::build_graph;
 use crate::init::init_missing_sidecars;
 use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
@@ -23,7 +24,7 @@ use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 
 #[derive(Parser)]
 #[command(name = "relaygraph")]
-#[command(about = "Build, validate, and export Git-backed resource graphs")]
+#[command(about = "Build, author, validate, and query Git-backed resource graphs")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -68,6 +69,20 @@ enum Commands {
     /// Generate missing sidecars for configured requireSidecar patterns.
     Init {
         /// Print files that would be created without writing them.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Generate a sidecar for one discovered resource path.
+    Generate {
+        /// Existing target resource locator, for example path:src/main.rs.
+        target: String,
+        /// Resource kind to write into the generated sidecar.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Outgoing link in rel:locator form. May be repeated; targets must resolve before writing.
+        #[arg(long, value_parser = parse_generate_link)]
+        link: Vec<crate::generate::GenerateLink>,
+        /// Print the sidecar path that would be created without writing it.
         #[arg(long)]
         dry_run: bool,
     },
@@ -217,6 +232,12 @@ pub fn run() -> Result<ExitCode> {
         } => trace_command(&root, &config, &from, direction, json, format),
         Commands::Cache { command } => cache_rebuild_command(&root, &config, command),
         Commands::Init { dry_run } => init_command(&root, &config, dry_run),
+        Commands::Generate {
+            target,
+            kind,
+            link,
+            dry_run,
+        } => generate_command(&root, &config, target, kind, link, dry_run),
         Commands::Skill { .. } => unreachable!("skill commands are handled before config loading"),
     }
 }
@@ -557,5 +578,27 @@ fn init_command(
     for path in &created {
         println!("{path}");
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn generate_command(
+    root: &std::path::Path,
+    config: &crate::model::Config,
+    target: String,
+    kind: Option<String>,
+    links: Vec<crate::generate::GenerateLink>,
+    dry_run: bool,
+) -> Result<ExitCode> {
+    let created = generate_sidecar(
+        root,
+        config,
+        GenerateOptions {
+            target,
+            kind,
+            links,
+            dry_run,
+        },
+    )?;
+    println!("{created}");
     Ok(ExitCode::SUCCESS)
 }

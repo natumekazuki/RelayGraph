@@ -120,8 +120,12 @@ The cache has `metadata.cacheSchemaVersion = 1` and SQLite `PRAGMA user_version 
 ```powershell
 relaygraph validate
 relaygraph validate --json
+relaygraph --help
+relaygraph help generate
 relaygraph init --dry-run
 relaygraph init
+relaygraph generate path:action.yml --kind source --link verified-by:path:tests/cli.rs
+relaygraph generate path:action.yml --dry-run
 relaygraph export
 relaygraph trace id:docs.design.relaygraph
 relaygraph trace path:src/main.rs
@@ -131,6 +135,8 @@ relaygraph cache links
 relaygraph cache trace path:src/main.rs
 relaygraph cache diagnostics
 ```
+
+`generate` is a targeted authoring helper, not a relation inference engine. It creates exactly one sidecar for an explicit `path:` resource locator, writes a stable generated ID, and includes only the caller-provided `--kind` and `--link rel:locator` values. Before writing, it applies repository discovery, exclude, generated directory, plugin/config path, Git ignore, existing sidecar, symlink boundary, and plugin vocabulary checks.
 
 ## Source Layout
 
@@ -144,6 +150,7 @@ relaygraph cache diagnostics
 - `src/export.rs`: JSON export shape and generated incoming links
 - `src/trace.rs`: in-memory traversal
 - `src/init.rs`: sidecar generation
+- `src/generate.rs`: explicit single-sidecar creation
 - `src/repo.rs`: repository file discovery
 - `src/locator.rs`: `id:` and `path:` locator parsing
 - `src/diagnostic.rs`: shared diagnostic formatting and version checks
