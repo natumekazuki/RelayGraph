@@ -12,6 +12,18 @@ relaygraph validate --json
 
 Validation reports graph integrity issues such as missing sidecars, orphan sidecars, duplicate IDs, unresolved locators, unknown kinds, unknown relations, missing required relations, plugin load errors, and schema errors.
 
+## Help
+
+Use when checking the installed command surface or a subcommand's arguments.
+
+```bash
+relaygraph --help
+relaygraph help generate
+relaygraph generate --help
+```
+
+The top-level help lists available subcommands. Subcommand help shows accepted arguments, flags, and repeatable options.
+
 ## Trace
 
 Use before editing a file, feature root, or design document to discover related design docs, source files, and tests.
@@ -65,6 +77,17 @@ relaygraph init
 
 Prefer `--dry-run` before writing files. Do not create sidecars in generated, tool-owned, excluded, or CI-sensitive paths unless the repository explicitly allows them.
 
+## Generate
+
+Use when creating one sidecar for an existing Git-backed resource path.
+
+```bash
+relaygraph generate path:action.yml --dry-run
+relaygraph generate path:action.yml --kind source --link verified-by:path:tests/cli.rs
+```
+
+The command writes only explicitly supplied `kind` and `--link rel:locator` values. It rejects excluded resources, excluded sidecar paths, generated paths, plugin/config paths, undiscovered resources, symlink boundaries, Git-ignored sidecars, existing sidecars, unknown vocabulary, and unresolved link targets.
+
 ## Skill Install
 
 Use after installing the RelayGraph CLI when the user wants to install or refresh the bundled RelayGraph Skill.
@@ -81,6 +104,7 @@ When working inside the RelayGraph source repository and no installed binary is 
 
 ```bash
 cargo run -- validate --json
+cargo run -- help generate
 cargo run -- trace path:src/main.rs
 cargo run -- cache rebuild
 ```

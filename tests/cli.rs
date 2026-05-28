@@ -107,6 +107,132 @@ fn trace_json_preserves_declared_and_traversal_direction() {
 }
 
 #[test]
+fn generate_creates_explicit_sidecar_for_one_path() {
+    let root = temp_root("relaygraph-generate");
+    create_fixture_repo(&root);
+    fs::write(root.join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
+
+    let dry_run = run(
+        &root,
+        [
+            "generate",
+            "path:src/lib.rs",
+            "--kind",
+            "source",
+            "--dry-run",
+        ],
+    );
+    assert_success_with_stdout(dry_run, "src/lib.rs.relaygraph.yaml");
+    assert!(!root.join("src/lib.rs.relaygraph.yaml").exists());
+
+    let output = run(
+        &root,
+        [
+            "generate",
+            "path:src/lib.rs",
+            "--kind",
+            "source",
+            "--link",
+            "realized-by:path:docs/root.md",
+        ],
+    );
+    assert_success_with_stdout(output, "src/lib.rs.relaygraph.yaml");
+    let sidecar = fs::read_to_string(root.join("src/lib.rs.relaygraph.yaml")).unwrap();
+    assert!(sidecar.contains("id: \"src.lib.rs\""));
+    assert!(sidecar.contains("kind: \"source\""));
+    assert!(sidecar.contains("rel: \"realized-by\""));
+    assert!(sidecar.contains("to: \"path:docs/root.md\""));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn generate_rejects_invalid_or_existing_targets_without_writing() {
+    let root = temp_root("relaygraph-generate-reject");
+    create_fixture_repo(&root);
+    fs::write(root.join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
+
+    let existing = run(&root, ["generate", "path:src/main.rs"]);
+    assert!(!existing.status.success());
+    assert!(String::from_utf8_lossy(&existing.stderr).contains("sidecar already exists"));
+
+    let unknown_relation = run(
+        &root,
+        [
+            "generate",
+            "path:src/lib.rs",
+            "--kind",
+            "source",
+            "--link",
+            "unknown:path:docs/root.md",
+        ],
+    );
+    assert!(!unknown_relation.status.success());
+    assert!(String::from_utf8_lossy(&unknown_relation.stderr).contains("unknown relation"));
+    assert!(!root.join("src/lib.rs.relaygraph.yaml").exists());
+
+    let missing_path = run(
+        &root,
+        [
+            "generate",
+            "path:src/lib.rs",
+            "--kind",
+            "source",
+            "--link",
+            "realized-by:path:tests/missing.rs",
+        ],
+    );
+    assert!(!missing_path.status.success());
+    assert!(String::from_utf8_lossy(&missing_path.stderr).contains("missing-path"));
+    assert!(!root.join("src/lib.rs.relaygraph.yaml").exists());
+
+    let missing_id = run(
+        &root,
+        [
+            "generate",
+            "path:src/lib.rs",
+            "--kind",
+            "source",
+            "--link",
+            "realized-by:id:missing",
+        ],
+    );
+    assert!(!missing_id.status.success());
+    assert!(String::from_utf8_lossy(&missing_id.stderr).contains("unresolved-id"));
+    assert!(!root.join("src/lib.rs.relaygraph.yaml").exists());
+
+    let excluded = run(
+        &root,
+        ["generate", "path:relaygraph/plugins/feature-trace.yaml"],
+    );
+    assert!(!excluded.status.success());
+    assert!(String::from_utf8_lossy(&excluded.stderr).contains("non-resource path"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn generate_rejects_sidecars_excluded_by_config() {
+    let root = temp_root("relaygraph-generate-excluded-sidecar");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join(".relaygraph.yaml"),
+        "schemaVersion: 1\nuseGitIgnore: false\nplugins: []\nexclude:\n  - \"*.relaygraph.yaml\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.md"), "# A\n").unwrap();
+
+    let output = run(&root, ["generate", "path:a.md", "--dry-run"]);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("generated sidecar would be excluded"));
+    assert!(!root.join("a.md.relaygraph.yaml").exists());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn skill_install_recreates_saved_skill_directory() {
     let root = temp_root("relaygraph-skill-install");
     let skills_dir = root.join("skills");
