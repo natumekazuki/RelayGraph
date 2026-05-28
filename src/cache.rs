@@ -12,6 +12,7 @@ use crate::locator::parse_locator;
 use crate::model::{BuildResult, Direction, Locator, CACHE_SCHEMA_VERSION};
 use crate::plugin::build_relation_rank;
 use crate::repo::is_reserved_generated_path;
+use crate::trace::{TraceNode, TraceResult, TraceStart, TraceTraversal, TraceVia};
 use crate::util::{display_path, normalize_repo_path_strict};
 
 #[derive(Debug, Serialize)]
@@ -42,6 +43,17 @@ pub struct CacheDiagnostic {
     pub code: String,
     pub path: Option<String>,
     pub message: String,
+}
+
+struct CacheTraceEdge {
+    target_path: String,
+    target_locator: String,
+    rel: String,
+    relation_rank: Option<i64>,
+    order: Option<i64>,
+    traversal: TraceTraversal,
+    from: String,
+    to: String,
 }
 
 pub fn default_cache_path() -> PathBuf {
@@ -312,31 +324,43 @@ fn cache_link_target_path(link: &CacheLink) -> Option<String> {
     }
 }
 
-pub fn cache_trace(path: &Path, from: &str, direction: Direction) -> Result<Vec<String>> {
+pub fn cache_trace(path: &Path, from: &str, direction: Direction) -> Result<TraceResult> {
     let connection = open_cache(path)?;
     let start_path = resolve_cache_resource_path(&connection, from)?;
     let links = read_cache_links(&connection)?;
-    let mut by_source = BTreeMap::<String, Vec<CacheLink>>::new();
+    let mut by_source = BTreeMap::<String, Vec<CacheTraceEdge>>::new();
     for link in links {
         if matches!(direction, Direction::Outgoing | Direction::Both) {
-            by_source
-                .entry(link.source_path.clone())
-                .or_default()
-                .push(link.clone());
+            if let Some(target_path) = &link.target_path {
+                by_source
+                    .entry(link.source_path.clone())
+                    .or_default()
+                    .push(CacheTraceEdge {
+                        target_path: target_path.clone(),
+                        target_locator: link.target_locator.clone(),
+                        rel: link.rel.clone(),
+                        relation_rank: link.relation_rank,
+                        order: link.order,
+                        traversal: TraceTraversal::Outgoing,
+                        from: link.source_path.clone(),
+                        to: target_path.clone(),
+                    });
+            }
         }
         if matches!(direction, Direction::Incoming | Direction::Both) {
             if let Some(target_path) = &link.target_path {
                 by_source
                     .entry(target_path.clone())
                     .or_default()
-                    .push(CacheLink {
-                        source_path: target_path.clone(),
-                        rel: link.rel.clone(),
+                    .push(CacheTraceEdge {
+                        target_path: link.source_path.clone(),
                         target_locator: format!("path:{}", link.source_path),
-                        target_path: Some(link.source_path.clone()),
-                        target_id: None,
+                        rel: link.rel.clone(),
                         relation_rank: link.relation_rank,
                         order: link.order,
+                        traversal: TraceTraversal::Incoming,
+                        from: link.source_path.clone(),
+                        to: target_path.clone(),
                     });
             }
         }
@@ -346,29 +370,51 @@ pub fn cache_trace(path: &Path, from: &str, direction: Direction) -> Result<Vec<
     }
 
     let mut visited = BTreeSet::new();
-    let mut pending = vec![start_path];
+    let mut pending = vec![(start_path.clone(), 0usize, None::<TraceVia>)];
     let mut ordered = Vec::new();
 
-    while let Some(path) = pending.pop() {
+    while let Some((path, depth, via)) = pending.pop() {
         if !visited.insert(path.clone()) {
             continue;
         }
-        ordered.push(path.clone());
+        ordered.push(TraceNode {
+            path: path.clone(),
+            depth,
+            via,
+        });
 
         let mut next = by_source
             .get(path.as_str())
             .into_iter()
             .flat_map(|links| links.iter())
-            .filter_map(|link| link.target_path.clone())
+            .map(|link| {
+                (
+                    link.target_path.clone(),
+                    depth + 1,
+                    Some(TraceVia {
+                        traversal: link.traversal,
+                        rel: link.rel.clone(),
+                        from: link.from.clone(),
+                        to: link.to.clone(),
+                    }),
+                )
+            })
             .collect::<Vec<_>>();
         next.reverse();
         pending.extend(next);
     }
 
-    Ok(ordered)
+    Ok(TraceResult {
+        start: TraceStart {
+            locator: from.to_string(),
+            path: start_path,
+        },
+        direction,
+        nodes: ordered,
+    })
 }
 
-fn sort_cache_links(links: &mut [CacheLink]) {
+fn sort_cache_links(links: &mut [CacheTraceEdge]) {
     links.sort_by(|left, right| {
         (
             left.order.unwrap_or(i64::MAX),

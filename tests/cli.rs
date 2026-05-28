@@ -58,6 +58,55 @@ fn cli_validates_exports_caches_and_traces_fixture_repo() {
 }
 
 #[test]
+fn trace_default_output_shows_relation_direction() {
+    let root = temp_root("relaygraph-trace-relations");
+    create_fixture_repo(&root);
+
+    assert_success(run(&root, ["validate"]));
+
+    let trace = run(&root, ["trace", "path:src/main.rs"]);
+
+    assert_success_with_lines(
+        trace,
+        &["src/main.rs", "docs/root.md --realized-by--> src/main.rs"],
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn trace_json_preserves_declared_and_traversal_direction() {
+    let root = temp_root("relaygraph-trace-json");
+    create_fixture_repo(&root);
+
+    assert_success(run(&root, ["validate"]));
+
+    let trace = run(&root, ["trace", "path:src/main.rs", "--json"]);
+
+    let stdout = String::from_utf8_lossy(&trace.stdout);
+    let stderr = String::from_utf8_lossy(&trace.stderr);
+    assert!(
+        trace.status.success(),
+        "expected success\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(json["start"]["locator"], "path:src/main.rs");
+    assert_eq!(json["start"]["path"], "src/main.rs");
+    assert_eq!(json["direction"], "both");
+    assert_eq!(json["nodes"][0]["path"], "src/main.rs");
+    assert_eq!(json["nodes"][0]["depth"], 0);
+    assert!(json["nodes"][0]["via"].is_null());
+    assert_eq!(json["nodes"][1]["path"], "docs/root.md");
+    assert_eq!(json["nodes"][1]["depth"], 1);
+    assert_eq!(json["nodes"][1]["via"]["traversal"], "incoming");
+    assert_eq!(json["nodes"][1]["via"]["rel"], "realized-by");
+    assert_eq!(json["nodes"][1]["via"]["from"], "docs/root.md");
+    assert_eq!(json["nodes"][1]["via"]["to"], "src/main.rs");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn skill_install_recreates_saved_skill_directory() {
     let root = temp_root("relaygraph-skill-install");
     let skills_dir = root.join("skills");
@@ -287,7 +336,17 @@ fn cache_trace_matches_relation_order_used_by_trace() {
         ["cache", "rebuild", "--output", cache_path.to_str().unwrap()],
     ));
 
-    let trace = run(&root, ["trace", "path:root.md", "--direction", "outgoing"]);
+    let trace = run(
+        &root,
+        [
+            "trace",
+            "path:root.md",
+            "--direction",
+            "outgoing",
+            "--format",
+            "paths",
+        ],
+    );
     assert_success_with_lines(trace, &["root.md", "b.md", "a.md"]);
 
     let cache_trace = run(
@@ -300,6 +359,8 @@ fn cache_trace_matches_relation_order_used_by_trace() {
             "path:root.md",
             "--direction",
             "outgoing",
+            "--format",
+            "paths",
         ],
     );
     assert_success_with_lines(cache_trace, &["root.md", "b.md", "a.md"]);
@@ -339,7 +400,17 @@ fn trace_and_cache_trace_tie_break_by_target_locator() {
         ["cache", "rebuild", "--output", cache_path.to_str().unwrap()],
     ));
 
-    let trace = run(&root, ["trace", "path:root.md", "--direction", "outgoing"]);
+    let trace = run(
+        &root,
+        [
+            "trace",
+            "path:root.md",
+            "--direction",
+            "outgoing",
+            "--format",
+            "paths",
+        ],
+    );
     assert_success_with_lines(trace, &["root.md", "z.md", "a.md"]);
 
     let cache_trace = run(
@@ -352,6 +423,8 @@ fn trace_and_cache_trace_tie_break_by_target_locator() {
             "path:root.md",
             "--direction",
             "outgoing",
+            "--format",
+            "paths",
         ],
     );
     assert_success_with_lines(cache_trace, &["root.md", "z.md", "a.md"]);
@@ -373,7 +446,14 @@ fn incoming_trace_and_cache_links_respect_relation_order_and_target_ids() {
 
     let trace = run(
         &root,
-        ["trace", "path:target.md", "--direction", "incoming"],
+        [
+            "trace",
+            "path:target.md",
+            "--direction",
+            "incoming",
+            "--format",
+            "paths",
+        ],
     );
     assert_success_with_lines(trace, &["target.md", "b.md", "a.md"]);
 
@@ -387,6 +467,8 @@ fn incoming_trace_and_cache_links_respect_relation_order_and_target_ids() {
             "path:target.md",
             "--direction",
             "incoming",
+            "--format",
+            "paths",
         ],
     );
     assert_success_with_lines(cache_trace, &["target.md", "b.md", "a.md"]);
@@ -427,7 +509,14 @@ fn incoming_trace_tie_breaks_by_source_path_in_cache() {
 
     let trace = run(
         &root,
-        ["trace", "path:target.md", "--direction", "incoming"],
+        [
+            "trace",
+            "path:target.md",
+            "--direction",
+            "incoming",
+            "--format",
+            "paths",
+        ],
     );
     assert_success_with_lines(trace, &["target.md", "a.md", "z.md"]);
 
@@ -441,6 +530,8 @@ fn incoming_trace_tie_breaks_by_source_path_in_cache() {
             "path:target.md",
             "--direction",
             "incoming",
+            "--format",
+            "paths",
         ],
     );
     assert_success_with_lines(cache_trace, &["target.md", "a.md", "z.md"]);
@@ -460,7 +551,17 @@ fn cache_trace_both_matches_trace_after_mixing_directions() {
         ["cache", "rebuild", "--output", cache_path.to_str().unwrap()],
     ));
 
-    let trace = run(&root, ["trace", "path:a.md", "--direction", "both"]);
+    let trace = run(
+        &root,
+        [
+            "trace",
+            "path:a.md",
+            "--direction",
+            "both",
+            "--format",
+            "paths",
+        ],
+    );
     assert_success_with_lines(trace, &["a.md", "b.md", "z.md"]);
 
     let cache_trace = run(
@@ -473,6 +574,8 @@ fn cache_trace_both_matches_trace_after_mixing_directions() {
             "path:a.md",
             "--direction",
             "both",
+            "--format",
+            "paths",
         ],
     );
     assert_success_with_lines(cache_trace, &["a.md", "b.md", "z.md"]);

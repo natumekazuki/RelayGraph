@@ -8,7 +8,8 @@ pub const DEFAULT_SIDECAR_SUFFIX: &str = ".relaygraph.yaml";
 pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 pub const CACHE_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
 pub enum Direction {
     Outgoing,
     Incoming,
