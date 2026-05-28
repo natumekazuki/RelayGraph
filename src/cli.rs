@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::cache::{
     cache_diagnostics, cache_links, cache_resources, cache_trace, default_cache_path,
@@ -18,7 +18,7 @@ use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
 use crate::plugin::configured_plugin_paths;
 use crate::repo::list_repo_files;
 use crate::skill::install_skill;
-use crate::trace::trace_from;
+use crate::trace::{trace_from, TraceResult};
 use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 
 #[derive(Parser)]
@@ -53,6 +53,12 @@ enum Commands {
         /// Direction to traverse.
         #[arg(long, value_enum, default_value_t = Direction::Both)]
         direction: Direction,
+        /// Print structured trace output for AI agents and tooling.
+        #[arg(long, conflicts_with = "format")]
+        json: bool,
+        /// Output format for non-JSON trace output.
+        #[arg(long, value_enum, default_value_t = TraceFormat::Relations)]
+        format: TraceFormat,
     },
     /// Rebuild or inspect the local SQLite cache.
     Cache {
@@ -123,6 +129,12 @@ enum CacheCommands {
         /// Direction to traverse.
         #[arg(long, value_enum, default_value_t = Direction::Both)]
         direction: Direction,
+        /// Print structured trace output for AI agents and tooling.
+        #[arg(long, conflicts_with = "format")]
+        json: bool,
+        /// Output format for non-JSON trace output.
+        #[arg(long, value_enum, default_value_t = TraceFormat::Relations)]
+        format: TraceFormat,
     },
     /// List diagnostics stored in the SQLite cache.
     Diagnostics {
@@ -143,6 +155,14 @@ enum SkillCommands {
         #[arg(long, value_name = "DIR")]
         to: PathBuf,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum TraceFormat {
+    /// Print direction-aware relation rows.
+    Relations,
+    /// Print only reachable paths, matching the legacy trace output.
+    Paths,
 }
 
 pub fn run() -> Result<ExitCode> {
@@ -189,7 +209,12 @@ pub fn run() -> Result<ExitCode> {
     match command {
         Commands::Validate { json } => validate_command(&root, &config, json),
         Commands::Export { output, force } => export_command(&root, &config, output, force),
-        Commands::Trace { from, direction } => trace_command(&root, &config, &from, direction),
+        Commands::Trace {
+            from,
+            direction,
+            json,
+            format,
+        } => trace_command(&root, &config, &from, direction, json, format),
         Commands::Cache { command } => cache_rebuild_command(&root, &config, command),
         Commands::Init { dry_run } => init_command(&root, &config, dry_run),
         Commands::Skill { .. } => unreachable!("skill commands are handled before config loading"),
@@ -296,16 +321,42 @@ fn trace_command(
     config: &crate::model::Config,
     from: &str,
     direction: Direction,
+    json: bool,
+    format: TraceFormat,
 ) -> Result<ExitCode> {
     let graph = build_graph(root, config)?;
     if !graph.diagnostics.is_empty() {
         print_diagnostics(&graph.diagnostics);
         return Ok(ExitCode::FAILURE);
     }
-    for path in trace_from(&graph.resources, &graph.plugins, from, direction)? {
-        println!("{path}");
-    }
+    let trace = trace_from(&graph.resources, &graph.plugins, from, direction)?;
+    print_trace_result(&trace, json, format)?;
     Ok(ExitCode::SUCCESS)
+}
+
+fn print_trace_result(trace: &TraceResult, json: bool, format: TraceFormat) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(trace)?);
+        return Ok(());
+    }
+
+    match format {
+        TraceFormat::Paths => {
+            for path in trace.paths() {
+                println!("{path}");
+            }
+        }
+        TraceFormat::Relations => {
+            for node in &trace.nodes {
+                let Some(via) = &node.via else {
+                    println!("{}", node.path);
+                    continue;
+                };
+                println!("{} --{}--> {}", via.from, via.rel, via.to);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn guard_output(
@@ -473,14 +524,15 @@ fn cache_read_command(root: &std::path::Path, command: CacheCommands) -> Result<
             db,
             from,
             direction,
+            json,
+            format,
         } => {
-            for path in cache_trace(
+            let trace = cache_trace(
                 &db.unwrap_or_else(|| root.join(default_cache_path())),
                 &from,
                 direction,
-            )? {
-                println!("{path}");
-            }
+            )?;
+            print_trace_result(&trace, json, format)?;
             Ok(ExitCode::SUCCESS)
         }
         CacheCommands::Diagnostics { db, json } => {

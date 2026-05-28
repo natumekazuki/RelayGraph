@@ -72,6 +72,14 @@ Traversal order is deterministic:
 
 `trace` defaults to `both` direction so a user can start from either the root document or the implementation resource.
 
+Trace output has three consumers:
+
+- AI agents and external tools use `--json` as the stable contract.
+- Humans use the default relation-oriented text output.
+- Existing scripts can request path-only output with `--format paths`.
+
+The JSON output keeps both the declaration direction and the traversal direction. Each non-start node records `from`, `to`, `rel`, `traversal`, and `depth` so an agent can distinguish a link written by the current file from a reverse traversal into the current file. Human output uses the same declared relation data and renders rows as `from --rel--> to`.
+
 ## Plugin Model
 
 Core remains generic. Domain vocabulary belongs in YAML plugins.

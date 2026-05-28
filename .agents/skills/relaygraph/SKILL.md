@@ -31,11 +31,11 @@ Use the installed binary when available:
 
 ```bash
 relaygraph validate --json
-relaygraph trace path:src/main.rs
+relaygraph trace path:src/main.rs --json
 relaygraph trace id:docs.design.relaygraph
 relaygraph export
 relaygraph cache rebuild
-relaygraph cache trace path:src/main.rs
+relaygraph cache trace path:src/main.rs --json
 relaygraph cache diagnostics
 ```
 
@@ -43,7 +43,7 @@ When working inside the RelayGraph source repository and the binary is not insta
 
 ```bash
 cargo run -- validate --json
-cargo run -- trace path:src/main.rs
+cargo run -- trace path:src/main.rs --json
 cargo run -- cache rebuild
 ```
 

@@ -30,12 +30,15 @@ cargo run -- export
 cargo run -- trace id:docs.design.relaygraph
 cargo run -- trace path:docs/design/relaygraph.md
 cargo run -- trace path:src/main.rs --direction incoming
+cargo run -- trace path:src/main.rs --json
+cargo run -- trace path:src/main.rs --format paths
 cargo run -- cache rebuild
 cargo run -- cache resources
 cargo run -- cache resources --json
 cargo run -- cache links --from id:docs.design.relaygraph
 cargo run -- cache trace id:docs.design.relaygraph
 cargo run -- cache trace path:src/main.rs --direction incoming
+cargo run -- cache trace path:src/main.rs --json
 cargo run -- cache diagnostics
 cargo run -- skill install --to .codex/skills
 ```
@@ -72,3 +75,4 @@ cargo clippy --all-targets --all-features -- -D warnings
 - `schemaVersion: 1` is supported.
 - Plugin relation order is used for deterministic traversal ordering.
 - `trace` defaults to `both` direction so generated reverse links are usable from any related resource.
+- Default trace output shows relation direction; `--json` is the structured AI/tooling contract and `--format paths` preserves path-only output.

@@ -20,9 +20,13 @@ Use before editing a file, feature root, or design document to discover related 
 relaygraph trace path:src/main.rs
 relaygraph trace id:docs.design.relaygraph
 relaygraph trace path:src/main.rs --direction incoming
+relaygraph trace path:src/main.rs --json
+relaygraph trace path:src/main.rs --format paths
 ```
 
 Use `path:` for repository-relative files. Use `id:` for stable resource IDs defined by sidecars.
+
+Prefer `--json` when another AI agent or tool will consume the result. The JSON output includes the requested start locator, resolved start path, direction, ordered nodes, depth, and each node's incoming or outgoing relation context. Use `--format paths` only when a path-only list is required for compatibility.
 
 ## Export
 
@@ -44,6 +48,7 @@ relaygraph cache resources
 relaygraph cache resources --json
 relaygraph cache links --from path:src/main.rs
 relaygraph cache trace path:src/main.rs
+relaygraph cache trace path:src/main.rs --json
 relaygraph cache diagnostics
 ```
 

@@ -8,6 +8,16 @@ Responsibilities:
 - Traverse from `id:` or `path:` locators.
 - Support outgoing, incoming, and both-direction traversal.
 - Preserve deterministic relation ordering.
+- Print direction-aware trace output for humans.
+- Provide structured trace JSON for AI agents and external tooling.
+
+Trace output modes:
+
+- Default text output prints the start path, then relation rows such as `from --rel--> to`.
+- `--json` prints a stable object with the start resource, requested direction, and ordered nodes.
+- `--format paths` preserves path-only output for scripts that only need the reachable file list.
+
+Each structured trace node includes `depth` and, except for the start node, a `via` object with `traversal`, `rel`, `from`, and `to`. `from` and `to` always describe the declared relation direction; `traversal` describes whether the trace moved outgoing or incoming from the previously visited node.
 
 Implementation:
 

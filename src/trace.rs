@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
+use serde::Serialize;
 
 use crate::locator::parse_locator;
 use crate::model::{Direction, Locator, Plugin, Resource};
@@ -13,6 +14,60 @@ struct TraceEdge {
     rel: String,
     order: Option<i64>,
     relation_rank: usize,
+    traversal: TraceTraversal,
+    from: String,
+    to: String,
+}
+
+struct PendingTrace {
+    path: String,
+    depth: usize,
+    via: Option<TraceVia>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceResult {
+    pub start: TraceStart,
+    pub direction: Direction,
+    pub nodes: Vec<TraceNode>,
+}
+
+impl TraceResult {
+    pub fn paths(&self) -> impl Iterator<Item = &str> {
+        self.nodes.iter().map(|node| node.path.as_str())
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceStart {
+    pub locator: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceNode {
+    pub path: String,
+    pub depth: usize,
+    pub via: Option<TraceVia>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceVia {
+    pub traversal: TraceTraversal,
+    pub rel: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TraceTraversal {
+    Outgoing,
+    Incoming,
 }
 
 pub fn trace_from(
@@ -20,7 +75,7 @@ pub fn trace_from(
     plugins: &[Plugin],
     from: &str,
     direction: Direction,
-) -> Result<Vec<String>> {
+) -> Result<TraceResult> {
     let relation_rank = build_relation_rank(plugins);
     let by_path = resources
         .iter()
@@ -52,14 +107,23 @@ pub fn trace_from(
     };
 
     let mut visited = BTreeSet::new();
-    let mut pending = vec![start_path];
+    let mut pending = vec![PendingTrace {
+        path: start_path.clone(),
+        depth: 0,
+        via: None,
+    }];
     let mut ordered = Vec::new();
 
-    while let Some(path) = pending.pop() {
+    while let Some(current) = pending.pop() {
+        let path = current.path;
         if !visited.insert(path.clone()) {
             continue;
         }
-        ordered.push(path.clone());
+        ordered.push(TraceNode {
+            path: path.clone(),
+            depth: current.depth,
+            via: current.via,
+        });
 
         let Some(resource) = by_path.get(path.as_str()) else {
             continue;
@@ -76,6 +140,9 @@ pub fn trace_from(
                         .get(link.rel.as_str())
                         .copied()
                         .unwrap_or(usize::MAX),
+                    traversal: TraceTraversal::Outgoing,
+                    from: resource.path.clone(),
+                    to: target_path.clone(),
                 })
             }));
         }
@@ -94,6 +161,9 @@ pub fn trace_from(
                             .get(link.rel.as_str())
                             .copied()
                             .unwrap_or(usize::MAX),
+                        traversal: TraceTraversal::Incoming,
+                        from: source.path.clone(),
+                        to: path.clone(),
                     })
             }));
         }
@@ -112,8 +182,24 @@ pub fn trace_from(
                 ))
         });
         next.reverse();
-        pending.extend(next.into_iter().map(|edge| edge.target_path));
+        pending.extend(next.into_iter().map(|edge| PendingTrace {
+            path: edge.target_path,
+            depth: current.depth + 1,
+            via: Some(TraceVia {
+                traversal: edge.traversal,
+                rel: edge.rel,
+                from: edge.from,
+                to: edge.to,
+            }),
+        }));
     }
 
-    Ok(ordered)
+    Ok(TraceResult {
+        start: TraceStart {
+            locator: from.to_string(),
+            path: start_path,
+        },
+        direction,
+        nodes: ordered,
+    })
 }
