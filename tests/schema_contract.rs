@@ -52,6 +52,7 @@ fn export_output_matches_documented_contract() {
                     ResolvedLink {
                         rel: "x".to_string(),
                         to: "path:target.md".to_string(),
+                        path_hint: None,
                         target_path: Some("target.md".to_string()),
                         target_id: None,
                         order: Some(1),
@@ -59,6 +60,7 @@ fn export_output_matches_documented_contract() {
                     ResolvedLink {
                         rel: "x".to_string(),
                         to: "id:target".to_string(),
+                        path_hint: Some("target.md".to_string()),
                         target_path: Some("target.md".to_string()),
                         target_id: Some("target".to_string()),
                         order: None,
@@ -146,6 +148,7 @@ fn export_output_matches_documented_contract() {
     );
     assert!(output["resources"][0]["links"][0]["targetId"].is_null());
     assert!(output["resources"][0]["links"][1]["order"].is_null());
+    assert_eq!(output["resources"][0]["links"][1]["pathHint"], "target.md");
     assert!(output["diagnostics"][1]["path"].is_null());
     assert!(output["plugins"][1]["traversal"].is_null());
     assert_schema_rejects(
@@ -261,6 +264,14 @@ fn sidecar_and_plugin_schema_reject_whitespace_only_names() {
     );
     assert_schema_rejects(
         &serde_json::json!({"links": [{"rel": "x", "to": "path:C:\\a.md"}]}),
+        &sidecar,
+    );
+    assert_matches_schema(
+        &serde_json::json!({"links": [{"rel": "x", "to": "id:a", "pathHint": "docs/a.md"}]}),
+        &sidecar,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({"links": [{"rel": "x", "to": "id:a", "pathHint": "../a.md"}]}),
         &sidecar,
     );
     assert_schema_rejects(&serde_json::json!({}), &plugin);

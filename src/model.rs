@@ -46,27 +46,46 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Sidecar {
-    #[serde(default, deserialize_with = "optional_no_null")]
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub schema_version: Option<u32>,
-    #[serde(default, deserialize_with = "optional_no_null")]
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub id: Option<String>,
-    #[serde(default, deserialize_with = "optional_no_null")]
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub kind: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Link>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, serde_yaml::Value>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Link {
     pub rel: String,
     pub to: String,
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub path_hint: Option<String>,
     #[serde(default, deserialize_with = "optional_no_null")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<i64>,
 }
 
@@ -105,7 +124,7 @@ pub struct Traversal {
     pub relation_order: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     pub code: &'static str,
@@ -127,6 +146,7 @@ pub struct Resource {
 pub struct ResolvedLink {
     pub rel: String,
     pub to: String,
+    pub path_hint: Option<String>,
     pub target_path: Option<String>,
     pub target_id: Option<String>,
     pub order: Option<i64>,

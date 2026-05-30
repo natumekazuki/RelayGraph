@@ -12,10 +12,12 @@ metadata:
   owner: example
 links:
   - rel: realized-by
-    to: path:src/example.rs
+    to: id:src.example
+    pathHint: src/example.rs
     order: 10
   - rel: verified-by
-    to: path:tests/example.rs
+    to: id:tests.example
+    pathHint: tests/example.rs
     order: 20
 ```
 
@@ -26,6 +28,7 @@ links:
 - `kind`: resource kind allowed by the configured plugin.
 - `metadata`: optional object for repository-specific data.
 - `links`: optional ordered outgoing links.
+- `pathHint`: optional derived repo-relative target path for an `id:` link.
 
 ## Locators
 
@@ -34,7 +37,22 @@ Use only schema version 1 locators:
 - `id:<resource-id>`
 - `path:<repo-relative-path>`
 
+Prefer `id:` for link targets when the target has a stable sidecar ID. `path:` remains supported for compatibility and for targets without a useful ID.
+
 Do not use absolute paths, parent traversal, or paths outside the repository.
+
+## Path Hints
+
+`to` is the canonical link target. For id-first links, `pathHint` is only a readability hint.
+
+```yaml
+links:
+  - rel: realized-by
+    to: id:src.example
+    pathHint: src/example.rs
+```
+
+`validate` reports stale or invalid `pathHint` values without writing files. Use `relaygraph sync --dry-run` to preview updates and `relaygraph sync` to refresh existing hints from resolved IDs. `sync` does not add missing hints or migrate all links.
 
 ## Bundled Feature Trace Vocabulary
 
