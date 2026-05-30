@@ -18,15 +18,15 @@ jobs:
           - os: windows-latest
             artifact: windows-x64
             binary: relaygraph.exe
-            archive: zip
+            installer: msi
           - os: ubuntu-latest
             artifact: linux-x64
             binary: relaygraph
-            archive: tar.gz
+            installer: deb
           - os: macos-latest
             artifact: macos-arm64
             binary: relaygraph
-            archive: tar.gz
+            installer: pkg
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,26 +82,87 @@ jobs:
             Pop-Location
           }
 
-      - name: Package
+      - name: Install WiX
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 6.*
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Package Windows MSI
+        if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_ARTIFACT: ${{ matrix.artifact }}
-          RELEASE_ARCHIVE: ${{ matrix.archive }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $version = $env:RELEASE_TAG.TrimStart("v")
+          $installer = "relaygraph-$env:RELEASE_TAG-$env:RELEASE_ARTIFACT.msi"
+          wix build .github/installers/relaygraph.wxs `
+            -arch x64 `
+            -d ProductVersion=$version `
+            -d RelayGraphExe="${{ github.workspace }}\target\release\${{ matrix.binary }}" `
+            -out (Join-Path "dist" $installer)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package Linux DEB
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_ARTIFACT: ${{ matrix.artifact }}
           RELEASE_BINARY: ${{ matrix.binary }}
         run: |
-          $packageDir = Join-Path $env:RUNNER_TEMP "relaygraph-package"
-          New-Item -ItemType Directory -Force $packageDir | Out-Null
-          Copy-Item "${{ github.workspace }}/target/release/$env:RELEASE_BINARY" (Join-Path $packageDir $env:RELEASE_BINARY)
-
           New-Item -ItemType Directory -Force dist | Out-Null
-          $archive = "relaygraph-$env:RELEASE_TAG-$env:RELEASE_ARTIFACT.$env:RELEASE_ARCHIVE"
-          $archivePath = Join-Path "dist" $archive
-          if ($env:RELEASE_ARCHIVE -eq "zip") {
-            Compress-Archive -Path (Join-Path $packageDir $env:RELEASE_BINARY) -DestinationPath $archivePath -Force
-          } else {
-            tar -czf $archivePath -C $packageDir $env:RELEASE_BINARY
-          }
+          $packageRoot = Join-Path $env:RUNNER_TEMP "relaygraph-deb"
+          New-Item -ItemType Directory -Force (Join-Path $packageRoot "DEBIAN") | Out-Null
+          New-Item -ItemType Directory -Force (Join-Path $packageRoot "usr/bin") | Out-Null
+
+          $version = $env:RELEASE_TAG.TrimStart("v")
+          $control = @"
+          Package: relaygraph
+          Version: $version
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: natumekazuki
+          Description: Build deterministic resource graphs from Git-backed YAML declarations
+          "@
+          Set-Content -Path (Join-Path $packageRoot "DEBIAN/control") -Value ($control -replace "(?m)^          ", "") -NoNewline -Encoding utf8
+          install -m 0755 "${{ github.workspace }}/target/release/$env:RELEASE_BINARY" (Join-Path $packageRoot "usr/bin/relaygraph")
+
+          $installer = "relaygraph-$env:RELEASE_TAG-$env:RELEASE_ARTIFACT.deb"
+          dpkg-deb --build --root-owner-group $packageRoot (Join-Path "dist" $installer)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package macOS PKG
+        if: ${{ matrix.os == 'macos-latest' }}
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $packageRoot = Join-Path $env:RUNNER_TEMP "relaygraph-pkg-root"
+          $binDir = Join-Path $packageRoot "usr/local/bin"
+          New-Item -ItemType Directory -Force $binDir | Out-Null
+          Copy-Item "${{ github.workspace }}/target/release/${{ matrix.binary }}" (Join-Path $binDir "relaygraph")
+          chmod 0755 (Join-Path $binDir "relaygraph")
+
+          $version = $env:RELEASE_TAG.TrimStart("v")
+          $installer = Join-Path "dist" "relaygraph-$env:RELEASE_TAG-$env:RELEASE_ARTIFACT.pkg"
+          $pkgbuildArgs = @(
+            "--root", $packageRoot,
+            "--identifier", "io.github.natumekazuki.relaygraph",
+            "--version", $version,
+            "--install-location", "/"
+          )
+          $pkgbuildArgs += $installer
+
+          pkgbuild @pkgbuildArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4

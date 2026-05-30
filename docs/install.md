@@ -1,6 +1,6 @@
 # Install and Release
 
-RelayGraph v1.0.0 is the initial release. Published artifacts are named `relaygraph-<tag>-<platform>.<archive>`.
+RelayGraph v1.0.0 is the initial release. Published installers are named `relaygraph-<tag>-<platform>.<extension>`.
 
 ## Local Install
 
@@ -99,16 +99,30 @@ Input:
 tag = v1.0.0
 ```
 
-The workflow builds and uploads:
+The workflow builds and uploads installers:
 
 ```text
-relaygraph-<tag>-windows-x64.zip
-relaygraph-<tag>-linux-x64.tar.gz
-relaygraph-<tag>-macos-arm64.tar.gz
+relaygraph-<tag>-windows-x64.msi
+relaygraph-<tag>-linux-x64.deb
+relaygraph-<tag>-macos-arm64.pkg
 SHA256SUMS.txt
 ```
 
+The Windows MSI installs `relaygraph.exe` under Program Files and appends the
+install directory to the system `PATH`. The Linux DEB installs `relaygraph` to
+`/usr/bin`. The macOS PKG installs `relaygraph` to `/usr/local/bin`.
+
 The release version comes from the Git tag. `Cargo.toml` package version is metadata and does not gate the GitHub Release artifact version.
+
+## Unsigned Installers
+
+Release installers are intentionally unsigned. Windows SmartScreen, macOS
+Gatekeeper, or Linux desktop tooling may warn before running the installer.
+
+Every release publishes `SHA256SUMS.txt` so downloaded installers can be checked
+against the GitHub Release assets. OS-trusted code signing can be reconsidered
+later if the project needs a lower-friction installer experience for a broader
+audience.
 
 ## Versioning Checklist
 
