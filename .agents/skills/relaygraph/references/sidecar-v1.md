@@ -37,7 +37,7 @@ Use only schema version 1 locators:
 - `id:<resource-id>`
 - `path:<repo-relative-path>`
 
-Prefer `id:` for link targets when the target has a stable sidecar ID. `path:` remains supported for compatibility and for targets without a useful ID.
+Prefer `id:` for link targets when the target has a stable sidecar ID. `path:` remains supported in the schema for compatibility and for targets without a useful ID, but CLI link editing commands intentionally accept only ID-based source and target locators.
 
 Do not use absolute paths, parent traversal, or paths outside the repository.
 
@@ -52,7 +52,7 @@ links:
     pathHint: src/example.rs
 ```
 
-`validate` reports stale or invalid `pathHint` values without writing files. Use `relaygraph sync --dry-run` to preview updates and `relaygraph sync` to refresh existing hints from resolved IDs. `sync` does not add missing hints or migrate all links.
+`validate` reports stale or invalid `pathHint` values without writing files. Use `relaygraph link add ... --path-hint` or `relaygraph link update ... --path-hint` to write a hint resolved from a target ID while editing a link. Use `relaygraph sync --dry-run` to preview bulk updates and `relaygraph sync` to refresh existing hints from resolved IDs. `sync` does not add missing hints or migrate all links.
 
 ## Bundled Feature Trace Vocabulary
 

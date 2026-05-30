@@ -126,6 +126,9 @@ relaygraph init --dry-run
 relaygraph init
 relaygraph generate path:action.yml --kind source --link verified-by:path:tests/cli.rs
 relaygraph generate path:action.yml --dry-run
+relaygraph link add id:docs.root realized-by:id:src.main --path-hint
+relaygraph link update id:docs.root realized-by:id:src.main --new realized-by:id:tests.cli --path-hint
+relaygraph link remove id:docs.root realized-by:id:tests.cli
 relaygraph export
 relaygraph trace id:docs.design.relaygraph
 relaygraph trace path:src/main.rs
@@ -137,6 +140,8 @@ relaygraph cache diagnostics
 ```
 
 `generate` is a targeted authoring helper, not a relation inference engine. It creates exactly one sidecar for an explicit `path:` resource locator, writes a stable generated ID, and includes only the caller-provided `--kind` and `--link rel:locator` values. Before writing, it applies repository discovery, exclude, generated directory, plugin/config path, Git ignore, existing sidecar, symlink boundary, and plugin vocabulary checks.
+
+`link add`, `link remove`, and `link update` are targeted editing helpers for existing sidecars. They select the source resource by `id:<resource-id>` and accept link arguments in `rel:id:<target-id>` form so users do not need to edit sidecar paths or pass path locators for relation targets. `--path-hint` is a flag that writes or refreshes the derived `pathHint` from the resolved target ID.
 
 ## Source Layout
 
@@ -151,6 +156,7 @@ relaygraph cache diagnostics
 - `src/trace.rs`: in-memory traversal
 - `src/init.rs`: sidecar generation
 - `src/generate.rs`: explicit single-sidecar creation
+- `src/link_edit.rs`: existing sidecar link editing
 - `src/repo.rs`: repository file discovery
 - `src/locator.rs`: `id:` and `path:` locator parsing
 - `src/diagnostic.rs`: shared diagnostic formatting and version checks

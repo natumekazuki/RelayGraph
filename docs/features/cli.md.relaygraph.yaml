@@ -14,6 +14,10 @@ links:
   - rel: realized-by
     to: path:src/generate.rs
     order: 27
+  - rel: realized-by
+    to: id:src.link-edit
+    pathHint: src/link_edit.rs
+    order: 28
   - rel: verified-by
     to: path:tests/cli.rs
     order: 30

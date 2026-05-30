@@ -6,6 +6,7 @@ pub mod export;
 pub mod generate;
 pub mod graph;
 pub mod init;
+pub mod link_edit;
 pub mod locator;
 pub mod model;
 pub mod plugin;
