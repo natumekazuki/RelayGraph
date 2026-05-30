@@ -28,8 +28,24 @@ const SKILL_FILES: &[SkillFile] = &[
         contents: include_str!("../.agents/skills/relaygraph/references/cli.md"),
     },
     SkillFile {
+        path: "references/bootstrap-repo.md",
+        contents: include_str!("../.agents/skills/relaygraph/references/bootstrap-repo.md"),
+    },
+    SkillFile {
+        path: "references/config-v1.md",
+        contents: include_str!("../.agents/skills/relaygraph/references/config-v1.md"),
+    },
+    SkillFile {
+        path: "references/plugin-v1.md",
+        contents: include_str!("../.agents/skills/relaygraph/references/plugin-v1.md"),
+    },
+    SkillFile {
         path: "references/repository-rules.md",
         contents: include_str!("../.agents/skills/relaygraph/references/repository-rules.md"),
+    },
+    SkillFile {
+        path: "references/sample-patterns.md",
+        contents: include_str!("../.agents/skills/relaygraph/references/sample-patterns.md"),
     },
     SkillFile {
         path: "references/sidecar-v1.md",
