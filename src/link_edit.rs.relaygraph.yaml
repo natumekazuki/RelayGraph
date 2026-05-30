@@ -1,0 +1,7 @@
+schemaVersion: 1
+id: src.link-edit
+kind: source
+links:
+  - rel: verified-by
+    to: id:tests.cli
+    pathHint: tests/cli.rs

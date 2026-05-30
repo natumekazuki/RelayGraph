@@ -23,9 +23,11 @@ id: docs.feature.example
 kind: feature-root
 links:
   - rel: decomposes-to
-    to: path:docs/design/example.md
+    to: id:docs.design.example
+    pathHint: docs/design/example.md
   - rel: decomposes-to
-    to: path:src/example/Cargo.toml
+    to: id:src.example.module
+    pathHint: src/example/Cargo.toml
 ```
 
 ```yaml
@@ -35,9 +37,11 @@ id: src.example.module
 kind: module
 links:
   - rel: realized-by
-    to: path:src/example/lib.rs
+    to: id:src.example.lib
+    pathHint: src/example/lib.rs
   - rel: verified-by
-    to: path:tests/example.rs
+    to: id:tests.example
+    pathHint: tests/example.rs
 ```
 
 Add sidecars for the linked `design-doc`, `source`, and `test` resources too. The exact module path should match the repository's stable module boundary.

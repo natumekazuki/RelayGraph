@@ -35,6 +35,9 @@ Use the installed binary when available:
 relaygraph validate --json
 relaygraph trace path:src/main.rs --json
 relaygraph trace id:docs.design.relaygraph
+relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint
+relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint
+relaygraph link remove id:docs.feature.example realized-by:id:src.example
 relaygraph export
 relaygraph sync --dry-run
 relaygraph cache rebuild
@@ -47,6 +50,7 @@ When working inside the RelayGraph source repository and the binary is not insta
 ```bash
 cargo run -- validate --json
 cargo run -- trace path:src/main.rs --json
+cargo run -- link add id:docs.feature.example verified-by:id:tests.example --path-hint
 cargo run -- sync --dry-run
 cargo run -- cache rebuild
 ```
@@ -80,6 +84,8 @@ links:
 ```
 
 Use only resource kinds and relations allowed by the configured plugin. For schema examples, read `references/sidecar-v1.md`.
+
+When editing existing sidecar links from the CLI, prefer `relaygraph link add|update|remove` instead of hand-editing YAML. Select the source resource with `id:<resource-id>`, use `rel:id:<target-id>` link arguments, and use `--path-hint` as a flag when the sidecar should store the target path resolved from the target ID.
 
 ## Validation
 

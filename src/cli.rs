@@ -12,10 +12,14 @@ use crate::cache::{
 use crate::config::load_config;
 use crate::diagnostic::print_diagnostics;
 use crate::export::to_export;
-use crate::generate::{generate_sidecar, parse_generate_link, GenerateOptions};
+use crate::generate::{generate_sidecar, parse_generate_link, GenerateLink, GenerateOptions};
 use crate::graph::build_graph;
 use crate::init::init_missing_sidecars;
-use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
+use crate::link_edit::{
+    add_link, remove_link, update_link, AddLinkOptions, LinkEditOptions, RemoveLinkOptions,
+    UpdateLinkOptions,
+};
+use crate::model::{BuildResult, Diagnostic, Direction, Locator, CONFIG_PATH};
 use crate::plugin::configured_plugin_paths;
 use crate::repo::list_repo_files;
 use crate::skill::install_skill;
@@ -87,6 +91,11 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Add, remove, or update links in an existing sidecar.
+    Link {
+        #[command(subcommand)]
+        command: LinkCommands,
+    },
     /// Sync derived sidecar fields from canonical resource IDs.
     Sync {
         /// Print sidecars that would be updated without writing them.
@@ -97,6 +106,64 @@ enum Commands {
     Skill {
         #[command(subcommand)]
         command: SkillCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum LinkCommands {
+    /// Add an outgoing link to an existing resource sidecar.
+    Add {
+        /// Source resource id locator to edit, for example id:docs.root.
+        source: String,
+        /// Outgoing link in rel:id form.
+        #[arg(value_parser = parse_id_link)]
+        link: GenerateLink,
+        /// Write pathHint resolved from the target id.
+        #[arg(long)]
+        path_hint: bool,
+        /// Optional explicit traversal order.
+        #[arg(long)]
+        order: Option<i64>,
+        /// Print the sidecar path that would be updated without writing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove an outgoing link from an existing resource sidecar.
+    Remove {
+        /// Source resource id locator to edit, for example id:docs.root.
+        source: String,
+        /// Existing outgoing link in rel:id form.
+        #[arg(value_parser = parse_id_link)]
+        link: GenerateLink,
+        /// Print the sidecar path that would be updated without writing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Update an outgoing link in an existing resource sidecar.
+    Update {
+        /// Source resource id locator to edit, for example id:docs.root.
+        source: String,
+        /// Existing outgoing link in rel:id form.
+        #[arg(value_parser = parse_id_link)]
+        current: GenerateLink,
+        /// Replacement outgoing link in rel:id form.
+        #[arg(long = "new", value_parser = parse_id_link)]
+        new_link: Option<GenerateLink>,
+        /// Set or refresh pathHint from the target id.
+        #[arg(long)]
+        path_hint: bool,
+        /// Remove pathHint.
+        #[arg(long)]
+        clear_path_hint: bool,
+        /// Set explicit traversal order.
+        #[arg(long)]
+        order: Option<i64>,
+        /// Remove explicit traversal order.
+        #[arg(long)]
+        clear_order: bool,
+        /// Print the sidecar path that would be updated without writing it.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -245,6 +312,7 @@ pub fn run() -> Result<ExitCode> {
             link,
             dry_run,
         } => generate_command(&root, &config, target, kind, link, dry_run),
+        Commands::Link { command } => link_command(&root, &config, command),
         Commands::Sync { dry_run } => sync_command(&root, &config, dry_run),
         Commands::Skill { .. } => unreachable!("skill commands are handled before config loading"),
     }
@@ -608,6 +676,75 @@ fn generate_command(
         },
     )?;
     println!("{created}");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn parse_id_link(value: &str) -> std::result::Result<GenerateLink, String> {
+    let link = parse_generate_link(value)?;
+    match crate::locator::parse_locator(&link.to)? {
+        Locator::Id(_) => Ok(link),
+        Locator::Path(_) => Err("link target must use id: locator".to_string()),
+    }
+}
+
+fn link_command(
+    root: &std::path::Path,
+    config: &crate::model::Config,
+    command: LinkCommands,
+) -> Result<ExitCode> {
+    let changed = match command {
+        LinkCommands::Add {
+            source,
+            link,
+            path_hint,
+            order,
+            dry_run,
+        } => add_link(
+            root,
+            config,
+            AddLinkOptions {
+                common: LinkEditOptions { source, dry_run },
+                link,
+                path_hint,
+                order,
+            },
+        )?,
+        LinkCommands::Remove {
+            source,
+            link,
+            dry_run,
+        } => remove_link(
+            root,
+            config,
+            RemoveLinkOptions {
+                common: LinkEditOptions { source, dry_run },
+                link,
+            },
+        )?,
+        LinkCommands::Update {
+            source,
+            current,
+            new_link,
+            path_hint,
+            clear_path_hint,
+            order,
+            clear_order,
+            dry_run,
+        } => update_link(
+            root,
+            config,
+            UpdateLinkOptions {
+                common: LinkEditOptions { source, dry_run },
+                current,
+                new_link,
+                path_hint,
+                clear_path_hint,
+                order,
+                clear_order,
+            },
+        )?,
+    };
+    println!("{changed}");
     Ok(ExitCode::SUCCESS)
 }
 

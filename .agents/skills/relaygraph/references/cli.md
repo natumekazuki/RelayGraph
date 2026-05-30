@@ -19,6 +19,7 @@ Use when checking the installed command surface or a subcommand's arguments.
 ```bash
 relaygraph --help
 relaygraph help generate
+relaygraph help link add
 relaygraph generate --help
 ```
 
@@ -60,6 +61,18 @@ relaygraph sync
 ```
 
 `sync` updates existing `pathHint` values from resolved link targets. It does not add missing hints or migrate all links. `validate` stays read-only and reports stale hints as diagnostics; run `--dry-run` before writing sidecars.
+
+## Link
+
+Use when adding, removing, or updating outgoing links on an existing sidecar-backed resource. Select the source resource by stable ID and use target IDs for link arguments; do not pass sidecar file paths or `path:` link targets.
+
+```bash
+relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint
+relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint
+relaygraph link remove id:docs.feature.example realized-by:id:src.example
+```
+
+`--path-hint` is a flag. It writes or refreshes `pathHint` from the resolved target ID. `--clear-path-hint` removes an existing hint. Use `--order <N>` or `--clear-order` when traversal order must be explicit.
 
 ## Cache
 

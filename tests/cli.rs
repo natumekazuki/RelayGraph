@@ -233,6 +233,454 @@ fn generate_rejects_sidecars_excluded_by_config() {
 }
 
 #[test]
+fn link_commands_add_update_and_remove_existing_sidecar_links() {
+    let root = temp_root("relaygraph-link-edit");
+    create_fixture_repo(&root);
+
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/cli.rs"), "fn test() {}\n").unwrap();
+    fs::write(
+        root.join("tests/cli.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: tests.cli\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+
+    let dry_run = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--path-hint",
+            "--dry-run",
+        ],
+    );
+    assert_success_with_stdout(dry_run, "docs/root.md.relaygraph.yaml");
+    let unchanged = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(!unchanged.contains("id:tests.cli"));
+
+    let add = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--path-hint",
+            "--order",
+            "10",
+        ],
+    );
+    assert_success_with_stdout(add, "docs/root.md.relaygraph.yaml");
+    let added = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(added.contains("to: id:tests.cli"));
+    assert!(added.contains("pathHint: tests/cli.rs"));
+    assert!(added.contains("order: 10"));
+    assert_success(run(&root, ["validate"]));
+
+    let update = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--new",
+            "realized-by:id:src.main",
+            "--clear-path-hint",
+            "--clear-order",
+        ],
+    );
+    assert_success_with_stdout(update, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("to: id:src.main"));
+    assert!(!updated.contains("pathHint: tests/cli.rs"));
+    assert!(!updated.contains("order: 10"));
+    assert_success(run(&root, ["validate"]));
+
+    let remove = run(
+        &root,
+        ["link", "remove", "id:docs.root", "realized-by:id:src.main"],
+    );
+    assert_success_with_stdout(remove, "docs/root.md.relaygraph.yaml");
+    let removed = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(!removed.contains("to: id:src.main"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_update_refreshes_stale_path_hint_even_when_graph_is_invalid() {
+    let root = temp_root("relaygraph-link-edit-stale-hint");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    pathHint: src/old.rs\n",
+    )
+    .unwrap();
+
+    let invalid = run(&root, ["validate", "--json"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stdout).contains("path-hint-mismatch"));
+
+    let update = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(update, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("to: id:src.main"));
+    assert!(updated.contains("pathHint: src/main.rs"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_add_can_repair_missing_required_relation() {
+    let root = temp_root("relaygraph-link-edit-missing-required");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks: []\n",
+    )
+    .unwrap();
+
+    let invalid = run(&root, ["validate", "--json"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stdout).contains("missing-required-relation"));
+
+    let add = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(add, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("to: id:src.main"));
+    assert!(updated.contains("pathHint: src/main.rs"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_commands_preserve_comments_when_editing_block_links() {
+    let root = temp_root("relaygraph-link-edit-preserve-comments");
+    create_fixture_repo(&root);
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/cli.rs"), "fn test() {}\n").unwrap();
+    fs::write(
+        root.join("tests/cli.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: tests.cli\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks: # outgoing\n  # keep this comment\n  - rel: realized-by # keep rel comment\n    to: id:src.main # keep target comment\n    pathHint: src/old.rs # keep hint comment\n    order: 5 # keep order comment\n",
+    )
+    .unwrap();
+
+    let update = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(update, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("links: # outgoing"));
+    assert!(updated.contains("# keep this comment"));
+    assert!(updated.contains("rel: realized-by # keep rel comment"));
+    assert!(updated.contains("to: id:src.main # keep target comment"));
+    assert!(updated.contains("pathHint: src/main.rs # keep hint comment"));
+    assert!(updated.contains("order: 5 # keep order comment"));
+
+    let add = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(add, "docs/root.md.relaygraph.yaml");
+    let added = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(added.contains("links: # outgoing"));
+    assert!(added.contains("# keep this comment"));
+    assert!(added.contains("to: id:tests.cli"));
+    assert!(added.contains("pathHint: tests/cli.rs"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_update_recomputes_range_after_path_hint_changes() {
+    let root = temp_root("relaygraph-link-edit-range-recompute");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    order: 7\n",
+    )
+    .unwrap();
+
+    let add_hint = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(add_hint, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert_eq!(updated.matches("order: 7").count(), 1);
+    assert!(updated.contains("pathHint: src/main.rs\n    order: 7"));
+    assert_success(run(&root, ["validate"]));
+
+    let clear_hint = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--clear-path-hint",
+            "--clear-order",
+        ],
+    );
+    assert_success_with_stdout(clear_hint, "docs/root.md.relaygraph.yaml");
+    let cleared = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(!cleared.contains("pathHint:"));
+    assert!(!cleared.contains("order:"));
+    assert_success(run(&root, ["validate"]));
+
+    let clear_absent_hint = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--clear-path-hint",
+        ],
+    );
+    assert_success_with_stdout(clear_absent_hint, "docs/root.md.relaygraph.yaml");
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_add_reuses_empty_links_with_inline_comment() {
+    let root = temp_root("relaygraph-link-edit-empty-links-comment");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks: [] # empty for now\n",
+    )
+    .unwrap();
+
+    let add = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(add, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert_eq!(updated.matches("links:").count(), 1);
+    assert!(updated.contains("links:"));
+    assert!(updated.contains("to: id:src.main"));
+    assert!(updated.contains("pathHint: src/main.rs"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_commands_reject_flow_style_links_without_writing() {
+    let root = temp_root("relaygraph-link-edit-flow-style");
+    create_fixture_repo(&root);
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/cli.rs"), "fn test() {}\n").unwrap();
+    fs::write(
+        root.join("tests/cli.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: tests.cli\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    let original =
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks: [{ rel: realized-by, to: id:tests.cli }]\n";
+    fs::write(root.join("docs/root.md.relaygraph.yaml"), original).unwrap();
+
+    let add = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert!(!add.status.success());
+    assert!(String::from_utf8_lossy(&add.stderr).contains("unsupported links formatting"));
+
+    let update = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--new",
+            "realized-by:id:src.main",
+        ],
+    );
+    assert!(!update.status.success());
+    assert!(String::from_utf8_lossy(&update.stderr).contains("unsupported links formatting"));
+
+    let remove = run(
+        &root,
+        ["link", "remove", "id:docs.root", "realized-by:id:tests.cli"],
+    );
+    assert!(!remove.status.success());
+    assert!(String::from_utf8_lossy(&remove.stderr).contains("unsupported links formatting"));
+
+    let unchanged = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert_eq!(unchanged, original);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_commands_handle_dash_only_sequence_items_without_data_loss() {
+    let root = temp_root("relaygraph-link-edit-dash-only-item");
+    create_fixture_repo(&root);
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/cli.rs"), "fn test() {}\n").unwrap();
+    fs::write(
+        root.join("tests/cli.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: tests.cli\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks:\n  - # existing link\n    rel: realized-by\n    to: id:src.main\n",
+    )
+    .unwrap();
+
+    let update = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(update, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("- # existing link"));
+    assert!(updated.contains("to: id:src.main"));
+    assert!(updated.contains("pathHint: src/main.rs"));
+
+    let add = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--path-hint",
+        ],
+    );
+    assert_success_with_stdout(add, "docs/root.md.relaygraph.yaml");
+    let added = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(added.contains("to: id:src.main"));
+    assert!(added.contains("to: id:tests.cli"));
+
+    let remove = run(
+        &root,
+        ["link", "remove", "id:docs.root", "realized-by:id:tests.cli"],
+    );
+    assert_success_with_stdout(remove, "docs/root.md.relaygraph.yaml");
+    let removed = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(removed.contains("to: id:src.main"));
+    assert!(!removed.contains("to: id:tests.cli"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_commands_reject_invalid_edits_without_writing() {
+    let root = temp_root("relaygraph-link-edit-reject");
+    create_fixture_repo(&root);
+
+    let unknown_relation = run(
+        &root,
+        ["link", "add", "id:docs.root", "unknown:id:src.main"],
+    );
+    assert!(!unknown_relation.status.success());
+    assert!(String::from_utf8_lossy(&unknown_relation.stderr).contains("unknown relation"));
+
+    let path_target = run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:path:src/main.rs",
+        ],
+    );
+    assert!(!path_target.status.success());
+    assert!(String::from_utf8_lossy(&path_target.stderr).contains("id: locator"));
+
+    let missing = run(
+        &root,
+        ["link", "remove", "id:docs.root", "realized-by:id:missing"],
+    );
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("link not found"));
+
+    let sidecar = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert_eq!(
+        sidecar,
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: path:src/main.rs\n"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn validate_reports_and_sync_updates_id_link_path_hints() {
     let root = temp_root("relaygraph-path-hint-sync");
     create_fixture_repo(&root);

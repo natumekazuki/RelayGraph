@@ -38,9 +38,11 @@ id: docs.feature.example
 kind: feature-root
 links:
   - rel: decomposes-to
-    to: path:docs/design/example.md
+    to: id:docs.design.example
+    pathHint: docs/design/example.md
   - rel: decomposes-to
-    to: path:src/example/Cargo.toml
+    to: id:src.example.module
+    pathHint: src/example/Cargo.toml
 ```
 
 ```yaml
@@ -57,9 +59,11 @@ id: src.example.module
 kind: module
 links:
   - rel: realized-by
-    to: path:src/example/lib.rs
+    to: id:src.example.lib
+    pathHint: src/example/lib.rs
   - rel: verified-by
-    to: path:tests/example.rs
+    to: id:tests.example
+    pathHint: tests/example.rs
 ```
 
 ```yaml
@@ -76,7 +80,7 @@ id: tests.example
 kind: test
 ```
 
-Use repo-relative paths only. Adapt the paths to files that actually exist in the repository. Do not point at generated files, package caches, build output, or files outside the repository.
+Use stable IDs for sidecar links and keep `pathHint` values repo-relative. Adapt path hints to files that actually exist in the repository. Do not point at generated files, package caches, build output, or files outside the repository.
 
 ## Generated Output
 
