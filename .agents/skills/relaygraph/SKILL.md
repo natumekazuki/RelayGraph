@@ -19,11 +19,13 @@ Use RelayGraph to understand and validate Git-backed resource graphs before and 
 ## Workflow
 
 1. Detect whether the repository uses RelayGraph by checking for `.relaygraph.yaml`.
-2. Read repository-local rules before creating sidecars, running `init`, or changing plugin vocabulary.
-3. Trace the target file, feature root, or design document before editing.
-4. Read the related resources returned by RelayGraph.
-5. Make the requested change using existing repository conventions.
-6. Validate the graph after changes.
+2. If the repository has no `.relaygraph.yaml`, read `references/bootstrap-repo.md` before creating initial graph files.
+3. Read repository-local rules before creating sidecars, running `init`, or changing plugin vocabulary.
+4. If root config, plugin vocabulary, or graph granularity is unclear, read the relevant reference before editing.
+5. Trace the target file, feature root, or design document before editing.
+6. Read the related resources returned by RelayGraph.
+7. Make the requested change using existing repository conventions.
+8. Validate the graph after changes.
 
 ## Command Selection
 
@@ -54,6 +56,12 @@ For command details, read `references/cli.md`.
 Repository-local rules override generic examples in this skill. Use them for include/exclude policy, sidecar placement, generated directories, CI-sensitive paths, allowed kinds and relations, ID naming, and validation commands.
 
 When a repository needs new or updated local rules, read `references/repository-rules.md`.
+
+For root config syntax and common config shapes, read `references/config-v1.md`.
+
+For plugin YAML syntax and when to use a repo-local or custom plugin, read `references/plugin-v1.md`.
+
+For initial graph granularity and repository pattern examples, read `references/sample-patterns.md`.
 
 ## Sidecars
 

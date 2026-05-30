@@ -1,0 +1,10 @@
+schemaVersion: 1
+id: docs.issues.relaygraph-skill.bootstrap-guide
+kind: design-doc
+links:
+  - rel: realized-by
+    to: path:.agents/skills/relaygraph/references/bootstrap-repo.md
+    order: 10
+  - rel: verified-by
+    to: path:tests/cli.rs
+    order: 20

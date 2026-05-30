@@ -253,8 +253,12 @@ fn skill_install_recreates_saved_skill_directory() {
     assert_success_with_stdout(output, "installed relaygraph skill to");
     assert!(saved_skill.join("SKILL.md").exists());
     assert!(saved_skill.join("agents/openai.yaml").exists());
+    assert!(saved_skill.join("references/bootstrap-repo.md").exists());
     assert!(saved_skill.join("references/cli.md").exists());
+    assert!(saved_skill.join("references/config-v1.md").exists());
+    assert!(saved_skill.join("references/plugin-v1.md").exists());
     assert!(saved_skill.join("references/repository-rules.md").exists());
+    assert!(saved_skill.join("references/sample-patterns.md").exists());
     assert!(saved_skill.join("references/sidecar-v1.md").exists());
     assert!(!saved_skill.join("stale/file.txt").exists());
 
