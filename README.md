@@ -30,6 +30,8 @@ cargo run -- init --dry-run
 cargo run -- init
 cargo run -- generate path:action.yml --kind source --link verified-by:path:tests/cli.rs
 cargo run -- generate path:action.yml --dry-run
+cargo run -- sync --dry-run
+cargo run -- sync
 cargo run -- export
 cargo run -- trace id:docs.design.relaygraph
 cargo run -- trace path:docs/design/relaygraph.md
@@ -50,6 +52,8 @@ cargo run -- skill install --to .codex/skills
 `init` only creates sidecars for paths matched by `requireSidecar`. With the default `requireSidecar: []`, it is expected to be a no-op.
 
 `generate` creates one sidecar for an explicit `path:` resource locator. It refuses excluded, generated, plugin, config, undiscovered, symlinked, ignored, or already-sidecar-backed paths, and it only writes explicitly supplied `kind` and `--link rel:locator` entries.
+
+New sidecar links should prefer `to: id:<resource-id>` as the canonical target. Optional `pathHint` values are derived readability hints; `validate` reports stale hints without writing, and `sync` refreshes existing hints from resolved IDs.
 
 Default outputs:
 

@@ -1,0 +1,20 @@
+schemaVersion: 1
+id: docs.issues.relaygraph.link-target
+kind: design-doc
+links:
+  - rel: realized-by
+    to: id:src.model
+    pathHint: src/model.rs
+    order: 10
+  - rel: realized-by
+    to: id:src.graph
+    pathHint: src/graph.rs
+    order: 20
+  - rel: realized-by
+    to: id:src.sync
+    pathHint: src/sync.rs
+    order: 30
+  - rel: verified-by
+    to: id:tests.cli
+    pathHint: tests/cli.rs
+    order: 40

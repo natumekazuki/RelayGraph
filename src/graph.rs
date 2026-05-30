@@ -180,9 +180,16 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                             message: format!("unresolved id locator: {}", link.to),
                         });
                     }
+                    validate_path_hint(
+                        &link.path_hint,
+                        target_path.as_deref(),
+                        sidecar_path,
+                        &mut diagnostics,
+                    );
                     ResolvedLink {
                         rel: link.rel,
                         to: link.to,
+                        path_hint: link.path_hint,
                         target_path,
                         target_id: Some(id),
                         order: link.order,
@@ -210,9 +217,16 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                         });
                         None
                     };
+                    validate_path_hint(
+                        &link.path_hint,
+                        target_path.as_deref(),
+                        sidecar_path,
+                        &mut diagnostics,
+                    );
                     ResolvedLink {
                         rel: link.rel,
                         to: link.to,
+                        path_hint: link.path_hint,
                         target_path,
                         target_id: None,
                         order: link.order,
@@ -364,6 +378,26 @@ fn validate_sidecar_definition(sidecar: &Sidecar, path: &str, diagnostics: &mut 
                 message: "link.to must not be empty".to_string(),
             });
         }
+        if link
+            .path_hint
+            .as_deref()
+            .is_some_and(|path_hint| path_hint.trim().is_empty())
+        {
+            diagnostics.push(Diagnostic {
+                code: "schema-error",
+                path: Some(path.to_string()),
+                message: "link.pathHint must not be empty".to_string(),
+            });
+        }
+        if let Some(path_hint) = &link.path_hint {
+            if let Err(message) = normalize_repo_path_strict(path_hint) {
+                diagnostics.push(Diagnostic {
+                    code: "schema-error",
+                    path: Some(path.to_string()),
+                    message: format!("invalid pathHint {path_hint}: {message}"),
+                });
+            }
+        }
     }
     if !metadata_is_json_compatible(&sidecar.metadata) {
         diagnostics.push(Diagnostic {
@@ -371,6 +405,29 @@ fn validate_sidecar_definition(sidecar: &Sidecar, path: &str, diagnostics: &mut 
             path: Some(path.to_string()),
             message: "metadata must be JSON-compatible; YAML mapping keys must be strings"
                 .to_string(),
+        });
+    }
+}
+
+fn validate_path_hint(
+    path_hint: &Option<String>,
+    target_path: Option<&str>,
+    sidecar_path: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(path_hint) = path_hint else {
+        return;
+    };
+    let Ok(normalized) = normalize_repo_path_strict(path_hint) else {
+        return;
+    };
+    if let Some(target_path) = target_path.filter(|target_path| *target_path != normalized) {
+        diagnostics.push(Diagnostic {
+            code: "path-hint-mismatch",
+            path: Some(sidecar_path.to_string()),
+            message: format!(
+                "pathHint {normalized} does not match resolved target path {target_path}"
+            ),
         });
     }
 }

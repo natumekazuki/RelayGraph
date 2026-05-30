@@ -50,6 +50,17 @@ relaygraph export
 
 The default graph JSON output is generated under `._relaygraph/generated/`. Treat it as rebuildable output.
 
+## Sync
+
+Use after validating sidecars when existing derived readability hints need to be refreshed.
+
+```bash
+relaygraph sync --dry-run
+relaygraph sync
+```
+
+`sync` updates existing `pathHint` values from resolved link targets. It does not add missing hints or migrate all links. `validate` stays read-only and reports stale hints as diagnostics; run `--dry-run` before writing sidecars.
+
 ## Cache
 
 Use cache commands for repeated AI-agent queries or external tooling.
@@ -105,6 +116,7 @@ When working inside the RelayGraph source repository and no installed binary is 
 ```bash
 cargo run -- validate --json
 cargo run -- help generate
+cargo run -- sync --dry-run
 cargo run -- trace path:src/main.rs
 cargo run -- cache rebuild
 ```

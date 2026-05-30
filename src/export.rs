@@ -37,6 +37,7 @@ pub struct ExportResource {
 pub struct ExportLink {
     pub rel: String,
     pub to: String,
+    pub path_hint: Option<String>,
     pub target_path: Option<String>,
     pub target_id: Option<String>,
     pub order: Option<i64>,
@@ -110,6 +111,7 @@ pub fn to_export(graph: BuildResult) -> ExportGraph {
                         .map(|link| ExportLink {
                             rel: link.rel,
                             to: link.to,
+                            path_hint: link.path_hint,
                             target_path: link.target_path,
                             target_id: link.target_id,
                             order: link.order,

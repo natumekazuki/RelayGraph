@@ -63,10 +63,11 @@
     "link": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rel", "to", "targetPath", "targetId", "order"],
+      "required": ["rel", "to", "pathHint", "targetPath", "targetId", "order"],
       "properties": {
         "rel": { "type": "string" },
         "to": { "type": "string" },
+        "pathHint": { "type": ["string", "null"] },
         "targetPath": { "type": ["string", "null"] },
         "targetId": { "type": ["string", "null"] },
         "order": { "type": ["integer", "null"] }

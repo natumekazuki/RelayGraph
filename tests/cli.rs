@@ -233,6 +233,107 @@ fn generate_rejects_sidecars_excluded_by_config() {
 }
 
 #[test]
+fn validate_reports_and_sync_updates_id_link_path_hints() {
+    let root = temp_root("relaygraph-path-hint-sync");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks: # outgoing\n  # keep this comment\n  - rel: realized-by\n    to: id:src.main\n    pathHint: src/old.rs # keep inline comment\n  - rel: realized-by\n    to: path:src/main.rs\n    pathHint: src/old-path.rs\n  - rel: realized-by\n    to: path:src/main.rs\n",
+    )
+    .unwrap();
+
+    let invalid = run(&root, ["validate", "--json"]);
+    assert!(!invalid.status.success());
+    let stdout = String::from_utf8_lossy(&invalid.stdout);
+    assert!(stdout.contains("\"code\": \"path-hint-mismatch\""));
+
+    let dry_run = run(&root, ["sync", "--dry-run"]);
+    assert_success_with_stdout(dry_run, "docs/root.md.relaygraph.yaml");
+    let unchanged = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(unchanged.contains("pathHint: src/old.rs"));
+    assert!(unchanged.contains("pathHint: src/old-path.rs"));
+
+    let sync = run(&root, ["sync"]);
+    assert_success_with_stdout(sync, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("links: # outgoing"));
+    assert!(updated.contains("pathHint: \"src/main.rs\" # keep inline comment"));
+    assert!(!updated.contains("pathHint: src/old-path.rs"));
+    assert!(updated.contains("# keep this comment"));
+    assert_eq!(updated.matches("pathHint:").count(), 2);
+    assert_success(run(&root, ["validate"]));
+
+    let export_path = root.join("graph.json");
+    assert_success(run(
+        &root,
+        ["export", "--output", export_path.to_str().unwrap()],
+    ));
+    let export = fs::read_to_string(export_path).unwrap();
+    assert!(export.contains("\"to\": \"id:src.main\""));
+    assert!(export.contains("\"pathHint\": \"src/main.rs\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn sync_rejects_path_hint_format_it_cannot_rewrite() {
+    let root = temp_root("relaygraph-path-hint-flow-style");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks: [{rel: realized-by, to: 'id:src.main', pathHint: src/old.rs}]\n",
+    )
+    .unwrap();
+
+    let invalid = run(&root, ["validate", "--json"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stdout).contains("path-hint-mismatch"));
+
+    let dry_run = run(&root, ["sync", "--dry-run"]);
+    assert!(!dry_run.status.success());
+    assert!(String::from_utf8_lossy(&dry_run.stderr).contains("unsupported links formatting"));
+
+    let sync = run(&root, ["sync"]);
+    assert!(!sync.status.success());
+    assert!(String::from_utf8_lossy(&sync.stderr).contains("unsupported links formatting"));
+    let unchanged = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(unchanged.contains("pathHint: src/old.rs"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn sync_updates_only_top_level_links_and_quotes_path_hints() {
+    let root = temp_root("relaygraph-path-hint-nested-links");
+    create_fixture_repo(&root);
+    fs::write(root.join("src/new #target.rs"), "fn target() {}\n").unwrap();
+    fs::write(
+        root.join("src/new #target.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: src.new-target\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nmetadata:\n  links:\n    owner: docs\nlinks:\n  - rel: realized-by\n    to: id:src.new-target\n    pathHint: src/old.rs\n",
+    )
+    .unwrap();
+
+    let invalid = run(&root, ["validate", "--json"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stdout).contains("path-hint-mismatch"));
+
+    let sync = run(&root, ["sync"]);
+    assert_success_with_stdout(sync, "docs/root.md.relaygraph.yaml");
+    let updated = fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap();
+    assert!(updated.contains("metadata:\n  links:\n    owner: docs\nlinks:"));
+    assert!(updated.contains("pathHint: \"src/new #target.rs\""));
+    assert!(!updated.contains("pathHint: src/new #target.rs"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn skill_install_recreates_saved_skill_directory() {
     let root = temp_root("relaygraph-skill-install");
     let skills_dir = root.join("skills");

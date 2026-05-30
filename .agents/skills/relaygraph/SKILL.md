@@ -36,6 +36,7 @@ relaygraph validate --json
 relaygraph trace path:src/main.rs --json
 relaygraph trace id:docs.design.relaygraph
 relaygraph export
+relaygraph sync --dry-run
 relaygraph cache rebuild
 relaygraph cache trace path:src/main.rs --json
 relaygraph cache diagnostics
@@ -46,6 +47,7 @@ When working inside the RelayGraph source repository and the binary is not insta
 ```bash
 cargo run -- validate --json
 cargo run -- trace path:src/main.rs --json
+cargo run -- sync --dry-run
 cargo run -- cache rebuild
 ```
 
@@ -73,7 +75,8 @@ id: src.graph
 kind: source
 links:
   - rel: verified-by
-    to: path:tests/cli.rs
+    to: id:tests.cli
+    pathHint: tests/cli.rs
 ```
 
 Use only resource kinds and relations allowed by the configured plugin. For schema examples, read `references/sidecar-v1.md`.
@@ -85,6 +88,8 @@ After editing `.relaygraph.yaml`, sidecars, plugins, or linked resources, run:
 ```bash
 relaygraph validate --json
 ```
+
+If validation reports stale `pathHint` values, run `relaygraph sync --dry-run` first, then `relaygraph sync` when the planned sidecar updates are correct.
 
 If the task changed graph structure, cache behavior, plugins, or many linked resources, also run:
 

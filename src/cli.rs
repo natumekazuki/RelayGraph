@@ -19,6 +19,7 @@ use crate::model::{BuildResult, Diagnostic, Direction, CONFIG_PATH};
 use crate::plugin::configured_plugin_paths;
 use crate::repo::list_repo_files;
 use crate::skill::install_skill;
+use crate::sync::sync_path_hints;
 use crate::trace::{trace_from, TraceResult};
 use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 
@@ -83,6 +84,12 @@ enum Commands {
         #[arg(long, value_parser = parse_generate_link)]
         link: Vec<crate::generate::GenerateLink>,
         /// Print the sidecar path that would be created without writing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Sync derived sidecar fields from canonical resource IDs.
+    Sync {
+        /// Print sidecars that would be updated without writing them.
         #[arg(long)]
         dry_run: bool,
     },
@@ -238,6 +245,7 @@ pub fn run() -> Result<ExitCode> {
             link,
             dry_run,
         } => generate_command(&root, &config, target, kind, link, dry_run),
+        Commands::Sync { dry_run } => sync_command(&root, &config, dry_run),
         Commands::Skill { .. } => unreachable!("skill commands are handled before config loading"),
     }
 }
@@ -600,5 +608,17 @@ fn generate_command(
         },
     )?;
     println!("{created}");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn sync_command(
+    root: &std::path::Path,
+    config: &crate::model::Config,
+    dry_run: bool,
+) -> Result<ExitCode> {
+    let changed = sync_path_hints(root, config, dry_run)?;
+    for path in &changed {
+        println!("{path}");
+    }
     Ok(ExitCode::SUCCESS)
 }
