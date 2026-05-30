@@ -130,7 +130,7 @@ jobs:
           Maintainer: natumekazuki
           Description: Build deterministic resource graphs from Git-backed YAML declarations
           "@
-          Set-Content -Path (Join-Path $packageRoot "DEBIAN/control") -Value ($control -replace "(?m)^          ", "") -NoNewline -Encoding utf8
+          Set-Content -Path (Join-Path $packageRoot "DEBIAN/control") -Value ($control -replace "(?m)^          ", "") -Encoding utf8
           install -m 0755 "${{ github.workspace }}/target/release/$env:RELEASE_BINARY" (Join-Path $packageRoot "usr/bin/relaygraph")
 
           $installer = "relaygraph-$env:RELEASE_TAG-$env:RELEASE_ARTIFACT.deb"
