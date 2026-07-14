@@ -1,4 +1,4 @@
-schemaVersion: 1
+schemaVersion: 2
 id: docs.design.relaygraph
 kind: feature-root
 links:
@@ -32,3 +32,10 @@ links:
   - rel: realized-by
     to: path:docs/schema/cache-schema.sql
     order: 100
+  - rel: decomposes-to
+    to: id:docs.adr.0001.sidecar-versioning-relation-freshness
+    pathHint: docs/adr/0001-sidecar-schema-versioning-and-relation-freshness.md
+    order: 55
+    acknowledged:
+      sourceRevision: sha256:c23b76a2597750bf888475996a522c775850501eaf9ca43b6fdb0af1e9565ae7
+      targetRevision: sha256:c576e30e0694799fdb9062de830ccbba814b14009aa14cf978c2493a31e23bfa

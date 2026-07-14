@@ -1,0 +1,16 @@
+schemaVersion: 2
+id: src.freshness
+kind: source
+links:
+  - rel: verified-by
+    to: id:tests.cli
+    pathHint: tests/cli.rs
+    acknowledged:
+      sourceRevision: sha256:c80d54728d057b873379dd4b1fd0736d941ea96319dd1d12424637d81622893f
+      targetRevision: sha256:56da9bdd16a91a8997aac870519c7f82f5afa5667fa36c1f7d7007907c186c7b
+  - rel: verified-by
+    to: id:tests.schema-contract
+    pathHint: tests/schema_contract.rs
+    acknowledged:
+      sourceRevision: sha256:c80d54728d057b873379dd4b1fd0736d941ea96319dd1d12424637d81622893f
+      targetRevision: sha256:121f11bf79543eb79ed4146f7b988be997b8322530b92c0f5d77362ead8b5d7f

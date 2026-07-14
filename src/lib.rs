@@ -3,6 +3,7 @@ pub mod cli;
 pub mod config;
 pub mod diagnostic;
 pub mod export;
+pub mod freshness;
 pub mod generate;
 pub mod graph;
 pub mod init;

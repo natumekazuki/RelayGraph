@@ -9,7 +9,9 @@ use crate::config::{sidecar_suffix, validate_config_values};
 use crate::diagnostic::{diagnostics_to_message, validate_schema_version};
 use crate::init::{existing_sidecar_ids, unique_generated_id_for_path};
 use crate::locator::parse_locator;
-use crate::model::{Config, Diagnostic, Locator, Plugin, Sidecar, CONFIG_PATH};
+use crate::model::{
+    Config, Diagnostic, Locator, Plugin, Sidecar, CONFIG_PATH, CONFIG_SCHEMA_VERSION,
+};
 use crate::plugin::{configured_plugin_paths, load_plugins};
 use crate::repo::{is_git_ignored, list_repo_files};
 use crate::util::{
@@ -47,7 +49,13 @@ pub fn parse_generate_link(value: &str) -> std::result::Result<GenerateLink, Str
 pub fn generate_sidecar(root: &Path, config: &Config, options: GenerateOptions) -> Result<String> {
     let suffix = sidecar_suffix(config);
     let mut diagnostics = Vec::new();
-    validate_schema_version(config.schema_version, CONFIG_PATH, &mut diagnostics);
+    validate_schema_version(
+        config.schema_version,
+        CONFIG_SCHEMA_VERSION,
+        &[CONFIG_SCHEMA_VERSION],
+        CONFIG_PATH,
+        &mut diagnostics,
+    );
     validate_config_values(config, &mut diagnostics);
     let exclude = globset(config.exclude.as_deref().unwrap_or(&[]), &mut diagnostics);
     if !diagnostics.is_empty() {

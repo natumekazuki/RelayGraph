@@ -49,13 +49,7 @@ src/main.rs.relaygraph.yaml
 
 Sidecars are optional unless the path matches `requireSidecar`.
 
-Sidecar schema version 1 supports:
-
-- `schemaVersion`
-- `id`
-- `kind`
-- `metadata`
-- `links`
+Sidecar versions 1 and 2 are supported. Version 2 adds explicit relation acknowledgement. The machine-readable contract is `docs/schema/sidecar.schema.json`; versioning and fingerprint decisions are recorded in `docs/adr/0001-sidecar-schema-versioning-and-relation-freshness.md`.
 
 Links are written in one direction. Reverse links are generated for export and trace.
 
@@ -120,6 +114,7 @@ The cache has `metadata.cacheSchemaVersion = 1` and SQLite `PRAGMA user_version 
 ```powershell
 relaygraph validate
 relaygraph validate --json
+relaygraph validate --strict
 relaygraph --help
 relaygraph help generate
 relaygraph init --dry-run
@@ -129,6 +124,7 @@ relaygraph generate path:action.yml --dry-run
 relaygraph link add id:docs.root realized-by:id:src.main --path-hint
 relaygraph link update id:docs.root realized-by:id:src.main --new realized-by:id:tests.cli --path-hint
 relaygraph link remove id:docs.root realized-by:id:tests.cli
+relaygraph link acknowledge id:docs.root realized-by:id:src.main
 relaygraph export
 relaygraph trace id:docs.design.relaygraph
 relaygraph trace path:src/main.rs
@@ -153,6 +149,7 @@ relaygraph cache diagnostics
 - `src/plugin.rs`: YAML plugin loading and plugin contract validation
 - `src/cache.rs`: SQLite cache rebuild and cache-backed queries
 - `src/export.rs`: JSON export shape and generated incoming links
+- `src/freshness.rs`: content fingerprints and relation freshness diagnostics
 - `src/trace.rs`: in-memory traversal
 - `src/init.rs`: sidecar generation
 - `src/generate.rs`: explicit single-sidecar creation
@@ -179,10 +176,11 @@ Feature-level docs live under `docs/features/` and are connected to implementati
 - `plugin-load-error`
 - `duplicate-plugin`
 - `schema-error`
+- `relation-review-required`
 
 ## Deferred Work
 
-- schema version 2 locators such as symbol, page, and region
+- future locator versions such as symbol, page, and region
 - richer plugin presets
 - larger fixture repositories
 - performance benchmarks

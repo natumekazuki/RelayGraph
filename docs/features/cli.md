@@ -8,7 +8,7 @@ Responsibilities:
 - Load root configuration once.
 - Call graph, export, trace, init, generate, link editing, and cache services.
 - Install the bundled RelayGraph Skill into a user-selected skills directory.
-- Convert diagnostics into process exit codes.
+- Convert structural and relation freshness diagnostics into process exit codes.
 - Keep command handlers thin and side-effect boundaries explicit.
 
 Implementation:
@@ -17,6 +17,7 @@ Implementation:
 - `src/cli.rs` contains command definitions and orchestration.
 - `src/generate.rs` owns explicit single-sidecar creation.
 - `src/link_edit.rs` owns existing sidecar link edits by source and target IDs.
+- `src/freshness.rs` owns content fingerprints and relation freshness diagnostics.
 - `src/skill.rs` owns bundled Skill installation.
 
 Link editing:
@@ -24,6 +25,8 @@ Link editing:
 - `link add`, `link remove`, and `link update` select the source resource with `id:<resource-id>`.
 - Link arguments use `rel:id:<target-id>`; `path:` link targets are intentionally rejected by the link editing command surface.
 - `--path-hint` is a flag that writes or refreshes `pathHint` from the resolved target ID.
+- `link acknowledge` records the current endpoint revisions and upgrades the edited sidecar to schema version 2.
+- `validate` reports stale acknowledged relations without failing; `validate --strict` fails when review is required.
 
 Validation:
 

@@ -9,6 +9,7 @@ use crate::diagnostic::validate_schema_version;
 use crate::locator::parse_locator;
 use crate::model::{
     BuildResult, Config, Diagnostic, Locator, ResolvedLink, Resource, Sidecar, CONFIG_PATH,
+    CONFIG_SCHEMA_VERSION, SIDECAR_SCHEMA_VERSION_V1, SIDECAR_SCHEMA_VERSION_V2,
 };
 use crate::plugin::{build_relation_rank, configured_plugin_paths, load_plugins};
 use crate::repo::list_repo_files_with_diagnostics;
@@ -17,7 +18,13 @@ use crate::util::{globset, is_repo_boundary_link, matches_glob, normalize_repo_p
 pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
     let suffix = sidecar_suffix(config);
     let mut diagnostics = Vec::new();
-    validate_schema_version(config.schema_version, CONFIG_PATH, &mut diagnostics);
+    validate_schema_version(
+        config.schema_version,
+        CONFIG_SCHEMA_VERSION,
+        &[CONFIG_SCHEMA_VERSION],
+        CONFIG_PATH,
+        &mut diagnostics,
+    );
     validate_config_values(config, &mut diagnostics);
 
     let files = list_repo_files_with_diagnostics(
@@ -97,7 +104,13 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
 
         if let Some(sidecar) = sidecar.as_ref() {
             let sidecar_path = sidecar_path.as_deref().unwrap();
-            validate_schema_version(sidecar.schema_version, sidecar_path, &mut diagnostics);
+            validate_schema_version(
+                sidecar.schema_version,
+                SIDECAR_SCHEMA_VERSION_V1,
+                &[SIDECAR_SCHEMA_VERSION_V1, SIDECAR_SCHEMA_VERSION_V2],
+                sidecar_path,
+                &mut diagnostics,
+            );
             validate_sidecar_definition(sidecar, sidecar_path, &mut diagnostics);
             if let Some(id) = &sidecar.id {
                 if let Some(existing) = id_to_path.get(id) {
@@ -193,6 +206,7 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                         target_path,
                         target_id: Some(id),
                         order: link.order,
+                        acknowledged: link.acknowledged,
                     }
                 }
                 Ok(Locator::Path(path)) => {
@@ -230,6 +244,7 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                         target_path,
                         target_id: None,
                         order: link.order,
+                        acknowledged: link.acknowledged,
                     }
                 }
                 Err(message) => {
@@ -345,6 +360,7 @@ fn read_sidecar(root: &Path, path: &str, diagnostics: &mut Vec<Diagnostic>) -> O
 }
 
 fn validate_sidecar_definition(sidecar: &Sidecar, path: &str, diagnostics: &mut Vec<Diagnostic>) {
+    let schema_version = sidecar.schema_version.unwrap_or(SIDECAR_SCHEMA_VERSION_V1);
     if sidecar.id.as_deref().is_some_and(|id| id.trim().is_empty()) {
         diagnostics.push(Diagnostic {
             code: "schema-error",
@@ -364,6 +380,29 @@ fn validate_sidecar_definition(sidecar: &Sidecar, path: &str, diagnostics: &mut 
         });
     }
     for link in &sidecar.links {
+        if link.acknowledged.is_some() && schema_version != SIDECAR_SCHEMA_VERSION_V2 {
+            diagnostics.push(Diagnostic {
+                code: "schema-error",
+                path: Some(path.to_string()),
+                message: "link.acknowledged requires sidecar schemaVersion 2".to_string(),
+            });
+        }
+        if let Some(acknowledged) = &link.acknowledged {
+            for (field, revision) in [
+                ("sourceRevision", &acknowledged.source_revision),
+                ("targetRevision", &acknowledged.target_revision),
+            ] {
+                if !valid_sha256_revision(revision) {
+                    diagnostics.push(Diagnostic {
+                        code: "schema-error",
+                        path: Some(path.to_string()),
+                        message: format!(
+                            "link.acknowledged.{field} must be sha256 followed by 64 lowercase hexadecimal characters"
+                        ),
+                    });
+                }
+            }
+        }
         if link.rel.trim().is_empty() {
             diagnostics.push(Diagnostic {
                 code: "schema-error",
@@ -407,6 +446,15 @@ fn validate_sidecar_definition(sidecar: &Sidecar, path: &str, diagnostics: &mut 
                 .to_string(),
         });
     }
+}
+
+fn valid_sha256_revision(revision: &str) -> bool {
+    revision.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
 }
 
 fn validate_path_hint(

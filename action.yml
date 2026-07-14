@@ -13,6 +13,10 @@ inputs:
     description: Repository directory that contains .relaygraph.yaml.
     required: false
     default: "."
+  strict:
+    description: Fail validation when an acknowledged relation requires review.
+    required: false
+    default: "false"
   export:
     description: Run relaygraph export after validate.
     required: false
@@ -69,10 +73,20 @@ runs:
 
     - name: Validate RelayGraph
       shell: pwsh
+      env:
+        RELAYGRAPH_STRICT: ${{ inputs.strict }}
       run: |
         Push-Location '${{ inputs.working-directory }}'
         try {
-          relaygraph validate --json
+          $strict = $env:RELAYGRAPH_STRICT.Trim().ToLowerInvariant()
+          if ($strict -notin @("true", "false")) {
+            throw "strict must be 'true' or 'false'"
+          }
+          $validateArgs = @("validate", "--json")
+          if ($strict -eq "true") {
+            $validateArgs += "--strict"
+          }
+          relaygraph @validateArgs
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }

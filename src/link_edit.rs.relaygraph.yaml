@@ -1,7 +1,10 @@
-schemaVersion: 1
+schemaVersion: 2
 id: src.link-edit
 kind: source
 links:
   - rel: verified-by
     to: id:tests.cli
     pathHint: tests/cli.rs
+    acknowledged:
+      sourceRevision: sha256:47d1d2b11f807f2fa583506431de1042f882276e61e616e3a7076e7f1e6f8293
+      targetRevision: sha256:56da9bdd16a91a8997aac870519c7f82f5afa5667fa36c1f7d7007907c186c7b

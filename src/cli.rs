@@ -12,12 +12,13 @@ use crate::cache::{
 use crate::config::load_config;
 use crate::diagnostic::print_diagnostics;
 use crate::export::to_export;
+use crate::freshness::{print_relation_freshness, validate_relation_freshness};
 use crate::generate::{generate_sidecar, parse_generate_link, GenerateLink, GenerateOptions};
 use crate::graph::build_graph;
 use crate::init::init_missing_sidecars;
 use crate::link_edit::{
-    add_link, remove_link, update_link, AddLinkOptions, LinkEditOptions, RemoveLinkOptions,
-    UpdateLinkOptions,
+    acknowledge_link, add_link, remove_link, update_link, AcknowledgeLinkOptions, AddLinkOptions,
+    LinkEditOptions, RemoveLinkOptions, UpdateLinkOptions,
 };
 use crate::model::{BuildResult, Diagnostic, Direction, Locator, CONFIG_PATH};
 use crate::plugin::configured_plugin_paths;
@@ -30,6 +31,7 @@ use crate::util::{display_path, is_repo_boundary_link, normalize_repo_path};
 #[derive(Parser)]
 #[command(name = "relaygraph")]
 #[command(about = "Build, author, validate, and query Git-backed resource graphs")]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -42,6 +44,9 @@ enum Commands {
         /// Print diagnostics as JSON.
         #[arg(long)]
         json: bool,
+        /// Fail when an acknowledged relation requires review.
+        #[arg(long)]
+        strict: bool,
     },
     /// Export the resolved graph as JSON.
     Export {
@@ -111,6 +116,17 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum LinkCommands {
+    /// Record the current source and target revisions after reviewing a relation.
+    Acknowledge {
+        /// Source resource id locator to edit, for example id:docs.root.
+        source: String,
+        /// Existing outgoing link in rel:id form.
+        #[arg(value_parser = parse_id_link)]
+        link: GenerateLink,
+        /// Print the sidecar path that would be updated without writing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Add an outgoing link to an existing resource sidecar.
     Add {
         /// Source resource id locator to edit, for example id:docs.root.
@@ -282,7 +298,11 @@ pub fn run() -> Result<ExitCode> {
     let config = match load_config(&root) {
         Ok(config) => config,
         Err(error) => {
-            if let Commands::Validate { json: true } = &command {
+            if let Commands::Validate {
+                json: true,
+                strict: _,
+            } = &command
+            {
                 let diagnostics = vec![Diagnostic {
                     code: "schema-error",
                     path: Some(CONFIG_PATH.to_string()),
@@ -296,7 +316,7 @@ pub fn run() -> Result<ExitCode> {
     };
 
     match command {
-        Commands::Validate { json } => validate_command(&root, &config, json),
+        Commands::Validate { json, strict } => validate_command(&root, &config, json, strict),
         Commands::Export { output, force } => export_command(&root, &config, output, force),
         Commands::Trace {
             from,
@@ -332,6 +352,7 @@ fn validate_command(
     root: &std::path::Path,
     config: &crate::model::Config,
     json: bool,
+    strict: bool,
 ) -> Result<ExitCode> {
     let graph = match build_graph(root, config) {
         Ok(graph) => graph,
@@ -346,16 +367,39 @@ fn validate_command(
         }
         Err(error) => return Err(error),
     };
+    let freshness = if graph.diagnostics.is_empty() {
+        validate_relation_freshness(root, &graph)?
+    } else {
+        Vec::new()
+    };
     if json {
-        println!("{}", serde_json::to_string_pretty(&graph.diagnostics)?);
+        let mut diagnostics = graph
+            .diagnostics
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        diagnostics.extend(
+            freshness
+                .iter()
+                .map(serde_json::to_value)
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        );
+        println!("{}", serde_json::to_string_pretty(&diagnostics)?);
+    } else if graph.diagnostics.is_empty() && freshness.is_empty() {
+        println!("ok");
     } else {
-        print_diagnostics(&graph.diagnostics);
+        if !graph.diagnostics.is_empty() {
+            print_diagnostics(&graph.diagnostics);
+        }
+        print_relation_freshness(&freshness);
     }
-    Ok(if graph.diagnostics.is_empty() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    Ok(
+        if !graph.diagnostics.is_empty() || (strict && !freshness.is_empty()) {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
+        },
+    )
 }
 
 fn resolve_repo_root(current_dir: &std::path::Path) -> Result<PathBuf> {
@@ -693,6 +737,18 @@ fn link_command(
     command: LinkCommands,
 ) -> Result<ExitCode> {
     let changed = match command {
+        LinkCommands::Acknowledge {
+            source,
+            link,
+            dry_run,
+        } => acknowledge_link(
+            root,
+            config,
+            AcknowledgeLinkOptions {
+                common: LinkEditOptions { source, dry_run },
+                link,
+            },
+        )?,
         LinkCommands::Add {
             source,
             link,
