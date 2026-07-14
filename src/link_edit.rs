@@ -5,10 +5,14 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::diagnostic::diagnostics_to_message;
+use crate::freshness::acknowledged_revisions;
 use crate::generate::GenerateLink;
 use crate::graph::build_graph;
 use crate::locator::parse_locator;
-use crate::model::{Config, Diagnostic, Link, Locator, Sidecar};
+use crate::model::{
+    AcknowledgedRevisions, Config, Diagnostic, Link, Locator, Sidecar,
+    LATEST_SIDECAR_SCHEMA_VERSION,
+};
 use crate::util::{display_path, is_repo_boundary_link};
 
 #[derive(Debug, Clone)]
@@ -42,6 +46,12 @@ pub struct UpdateLinkOptions {
     pub clear_order: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct AcknowledgeLinkOptions {
+    pub common: LinkEditOptions,
+    pub link: GenerateLink,
+}
+
 pub fn add_link(root: &Path, config: &Config, options: AddLinkOptions) -> Result<String> {
     let context = load_edit_context(root, config, &options.common.source)?;
     let mut link = Link {
@@ -49,6 +59,7 @@ pub fn add_link(root: &Path, config: &Config, options: AddLinkOptions) -> Result
         to: options.link.to,
         path_hint: None,
         order: options.order,
+        acknowledged: None,
     };
     let target_path = validate_link(&context, &link)?;
     if options.path_hint {
@@ -119,10 +130,15 @@ pub fn update_link(root: &Path, config: &Config, options: UpdateLinkOptions) -> 
     let mut sidecar = parse_sidecar(&text, &context.sidecar_path)?;
     let index = unique_link_index(&sidecar.links, &options.current.rel, &options.current.to)?;
 
-    let target_changed = options.new_link.is_some();
+    let target_changed = options.new_link.as_ref().is_some_and(|new_link| {
+        sidecar.links[index].rel != new_link.rel || sidecar.links[index].to != new_link.to
+    });
     if let Some(new_link) = options.new_link {
         sidecar.links[index].rel = new_link.rel;
         sidecar.links[index].to = new_link.to;
+        if target_changed {
+            sidecar.links[index].acknowledged = None;
+        }
     }
     let target_path = validate_link(&context, &sidecar.links[index])?;
     if options.clear_path_hint {
@@ -164,7 +180,36 @@ pub fn update_link(root: &Path, config: &Config, options: UpdateLinkOptions) -> 
     Ok(context.sidecar_path)
 }
 
+pub fn acknowledge_link(
+    root: &Path,
+    config: &Config,
+    options: AcknowledgeLinkOptions,
+) -> Result<String> {
+    let context = load_edit_context(root, config, &options.common.source)?;
+    let text = read_sidecar_text(root, &context.sidecar_path)?;
+    let mut sidecar = parse_sidecar(&text, &context.sidecar_path)?;
+    let index = unique_link_index(&sidecar.links, &options.link.rel, &options.link.to)?;
+    let target_path = validate_link(&context, &sidecar.links[index])?;
+    sidecar.links[index].acknowledged = Some(acknowledged_revisions(
+        root,
+        &context.source_path,
+        &target_path,
+    )?);
+
+    let updated = apply_link_update(&text, index, &sidecar.links[index])
+        .with_context(|| format!("failed to update links in {}", context.sidecar_path))?;
+    let updated = set_schema_version(&updated, LATEST_SIDECAR_SCHEMA_VERSION);
+    write_sidecar_text(
+        root,
+        &context.sidecar_path,
+        &updated,
+        options.common.dry_run,
+    )?;
+    Ok(context.sidecar_path)
+}
+
 struct EditContext {
+    source_path: String,
     sidecar_path: String,
     known_relations: Vec<String>,
     id_to_path: BTreeMap<String, String>,
@@ -217,6 +262,7 @@ fn load_edit_context(root: &Path, config: &Config, source: &str) -> Result<EditC
         })
         .collect::<BTreeMap<_, _>>();
     Ok(EditContext {
+        source_path: resource.path.clone(),
         sidecar_path,
         known_relations,
         id_to_path,
@@ -452,7 +498,75 @@ fn update_link_range(
     );
     let range = link_range_from_start(lines, link_start, item_indent);
     update_optional_i64_field(lines, range, item_indent, "order", link.order);
+    let range = link_range_from_start(lines, link_start, item_indent);
+    update_acknowledged_field(lines, range, item_indent, link.acknowledged.as_ref());
     Ok(())
+}
+
+fn update_acknowledged_field(
+    lines: &mut Vec<String>,
+    range: std::ops::Range<usize>,
+    item_indent: usize,
+    acknowledged: Option<&AcknowledgedRevisions>,
+) {
+    let field_indent = item_indent + 2;
+    let field_index = range
+        .clone()
+        .find(|index| link_field_line(&lines[*index], item_indent, "acknowledged"));
+    if let Some(start) = field_index {
+        let end = lines
+            .iter()
+            .enumerate()
+            .take(range.end)
+            .skip(start + 1)
+            .find_map(|(index, line)| {
+                let trimmed = line.trim_start();
+                let indent = line.len() - trimmed.len();
+                (indent <= field_indent && !trimmed.is_empty() && !trimmed.starts_with('#'))
+                    .then_some(index)
+            })
+            .unwrap_or(range.end);
+        lines.drain(start..end);
+    }
+    let Some(acknowledged) = acknowledged else {
+        return;
+    };
+    let range = link_range_from_start(lines, range.start, item_indent);
+    let nested_indent = field_indent + 2;
+    lines.splice(
+        range.end..range.end,
+        [
+            format!("{}acknowledged:", " ".repeat(field_indent)),
+            format!(
+                "{}sourceRevision: {}",
+                " ".repeat(nested_indent),
+                acknowledged.source_revision
+            ),
+            format!(
+                "{}targetRevision: {}",
+                " ".repeat(nested_indent),
+                acknowledged.target_revision
+            ),
+        ],
+    );
+}
+
+fn set_schema_version(text: &str, version: u32) -> String {
+    let trailing_newline = text.ends_with('\n');
+    let mut lines = text.lines().map(str::to_string).collect::<Vec<_>>();
+    if let Some(index) = lines.iter().position(|line| {
+        let trimmed = line.trim_start();
+        line.len() == trimmed.len() && field_line(trimmed, "schemaVersion")
+    }) {
+        lines[index] = replace_yaml_value(&lines[index], &version.to_string());
+    } else {
+        lines.insert(0, format!("schemaVersion: {version}"));
+    }
+    let mut updated = lines.join("\n");
+    if trailing_newline || !updated.is_empty() {
+        updated.push('\n');
+    }
+    updated
 }
 
 fn replace_required_link_field(

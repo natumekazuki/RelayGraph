@@ -13,6 +13,7 @@ From the repository root:
 
 ```powershell
 cargo install --path . --locked
+relaygraph --version
 relaygraph --help
 relaygraph validate
 ```
@@ -62,6 +63,7 @@ Restart the agent session after copying so the Skill metadata is rediscovered.
 
 ```powershell
 cargo build --locked --release
+.\target\release\relaygraph.exe --version
 .\target\release\relaygraph.exe --help
 ```
 
@@ -79,7 +81,7 @@ target/release/relaygraph.exe
 cargo fmt -- --check
 cargo test --locked
 cargo clippy --all-targets --all-features -- -D warnings
-cargo run --locked -- validate
+cargo run --locked -- validate --strict
 cargo run --locked -- cache rebuild
 cargo run --locked -- cache diagnostics
 cargo build --locked --release
@@ -112,7 +114,7 @@ The Windows MSI installs `relaygraph.exe` under Program Files and appends the
 install directory to the system `PATH`. The Linux DEB installs `relaygraph` to
 `/usr/bin`. The macOS PKG installs `relaygraph` to `/usr/local/bin`.
 
-The release version comes from the Git tag. `Cargo.toml` package version is metadata and does not gate the GitHub Release artifact version.
+The `[package].version` in `Cargo.toml` is the canonical CLI release version. The release tag must be `v<package-version>`, and the release workflow rejects a mismatch before building installers. The same version is reported by `relaygraph --version` and written into platform package metadata.
 
 ## Unsigned Installers
 
@@ -129,25 +131,35 @@ audience.
 Before creating a release:
 
 ```powershell
-# 1. Run local release checks.
+# 1. Set the next SemVer in Cargo.toml and refresh Cargo.lock.
+#    Commit both files through the normal pull request workflow.
+cargo check
+
+# 2. Confirm that the CLI reports the intended version.
+cargo run -- --version
+
+# 3. Run local release checks.
 cargo fmt -- --check
 cargo test --locked
 cargo clippy --all-targets --all-features -- -D warnings
-cargo run --locked -- validate
+cargo run --locked -- validate --strict
 cargo run --locked -- cache rebuild
 cargo run --locked -- cache diagnostics
 
-# 2. Merge any release notes or metadata updates into the protected default branch.
+# 4. Merge the version and release notes into the protected default branch.
 
-# 3. Create and push the tag from the protected branch tip.
+# 5. Create and push the matching tag from the protected branch tip.
 git switch <default-branch>
 git pull --ff-only origin <default-branch>
-git tag v1.0.0
-git push origin v1.0.0
+$package = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
+  Where-Object { $_.name -eq "relaygraph" }
+$tag = "v$($package.version)"
+git tag $tag
+git push origin $tag
 ```
 
-Then run the manual `Release` workflow with the same tag, for example `v1.0.0`.
-The workflow verifies tag format and tag checkout integrity before building or publishing artifacts. It does not require the tag to match `Cargo.toml` version.
+Then run the manual `Release` workflow with the same tag, for example `v1.2.0`.
+The workflow verifies tag format, tag checkout integrity, and equality with the `Cargo.toml` package version before building or publishing artifacts.
 
 When direct pushes to `master` are disabled, release changes go through a normal
 pull request first. After the PR is merged, create the release tag locally from

@@ -1,4 +1,4 @@
-use crate::model::{Diagnostic, SUPPORTED_SCHEMA_VERSION};
+use crate::model::Diagnostic;
 
 pub fn print_diagnostics(diagnostics: &[Diagnostic]) {
     if diagnostics.is_empty() {
@@ -27,17 +27,22 @@ pub fn diagnostics_to_message(diagnostics: &[Diagnostic]) -> String {
 
 pub fn validate_schema_version(
     version: Option<u32>,
+    default_version: u32,
+    supported_versions: &[u32],
     path: &str,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let version = version.unwrap_or(SUPPORTED_SCHEMA_VERSION);
-    if version != SUPPORTED_SCHEMA_VERSION {
+    let version = version.unwrap_or(default_version);
+    if !supported_versions.contains(&version) {
+        let expected = supported_versions
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
         diagnostics.push(Diagnostic {
             code: "schema-error",
             path: Some(path.to_string()),
-            message: format!(
-                "unsupported schemaVersion {version}; expected {SUPPORTED_SCHEMA_VERSION}"
-            ),
+            message: format!("unsupported schemaVersion {version}; expected one of [{expected}]"),
         });
     }
 }

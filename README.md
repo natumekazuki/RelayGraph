@@ -24,6 +24,7 @@ Prerequisites:
 ```powershell
 cargo run -- validate
 cargo run -- validate --json
+cargo run -- validate --strict
 cargo run -- --help
 cargo run -- help generate
 cargo run -- init --dry-run
@@ -33,6 +34,7 @@ cargo run -- generate path:action.yml --dry-run
 cargo run -- link add id:docs.root realized-by:id:src.main --path-hint
 cargo run -- link update id:docs.root realized-by:id:src.main --new realized-by:id:tests.cli --path-hint
 cargo run -- link remove id:docs.root realized-by:id:tests.cli
+cargo run -- link acknowledge id:docs.root realized-by:id:src.main
 cargo run -- sync --dry-run
 cargo run -- sync
 cargo run -- export
@@ -56,7 +58,9 @@ cargo run -- skill install --to .codex/skills
 
 `generate` creates one sidecar for an explicit `path:` resource locator. It refuses excluded, generated, plugin, config, undiscovered, symlinked, ignored, or already-sidecar-backed paths, and it only writes explicitly supplied `kind` and `--link rel:locator` entries.
 
-`link add`, `link remove`, and `link update` edit the `links` list for an existing resource selected by `id:<resource-id>`. Link arguments use `rel:id:<resource-id>` form; updates can replace the relation target with `--new`, set or refresh `pathHint` from the target ID with `--path-hint`, clear `pathHint`, and set or clear `order`. Each command supports `--dry-run`.
+`link add`, `link remove`, and `link update` edit the `links` list for an existing resource selected by `id:<resource-id>`. Link arguments use `rel:id:<resource-id>` form; updates can replace the relation target with `--new`, set or refresh `pathHint` from the target ID with `--path-hint`, clear `pathHint`, and set or clear `order`. `link acknowledge` records the current source and target fingerprints in a sidecar version 2 relation. Each link command supports `--dry-run`.
+
+`validate` reports changed acknowledged relations without failing. Use `validate --strict` when CI must fail until the relation is reviewed and acknowledged again. `sync` never updates acknowledgement.
 
 New sidecar links should prefer `to: id:<resource-id>` as the canonical target. Optional `pathHint` values are derived readability hints; `validate` reports stale hints without writing, and `sync` refreshes existing hints from resolved IDs.
 
@@ -87,7 +91,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 - Resources are repository files.
 - Sidecars are optional unless matched by `requireSidecar`.
 - Locators support `id:` and `path:`.
-- `schemaVersion: 1` is supported.
+- Config and plugin `schemaVersion: 1` are supported.
+- Sidecar versions 1 and 2 are supported; version 2 enables explicit relation acknowledgement and freshness validation.
 - Plugin relation order is used for deterministic traversal ordering.
 - `trace` defaults to `both` direction so generated reverse links are usable from any related resource.
 - Default trace output shows relation direction; `--json` is the structured AI/tooling contract and `--format paths` preserves path-only output.

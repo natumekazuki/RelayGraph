@@ -8,9 +8,10 @@ Use after editing `.relaygraph.yaml`, sidecars, plugins, or related resources.
 
 ```bash
 relaygraph validate --json
+relaygraph validate --strict
 ```
 
-Validation reports graph integrity issues such as missing sidecars, orphan sidecars, duplicate IDs, unresolved locators, unknown kinds, unknown relations, missing required relations, plugin load errors, and schema errors.
+Validation reports graph integrity issues such as missing sidecars, orphan sidecars, duplicate IDs, unresolved locators, unknown kinds, unknown relations, missing required relations, plugin load errors, and schema errors. Changed acknowledged relations are review warnings in the default mode; `--strict` makes those warnings fail validation for CI.
 
 ## Help
 
@@ -60,7 +61,7 @@ relaygraph sync --dry-run
 relaygraph sync
 ```
 
-`sync` updates existing `pathHint` values from resolved link targets. It does not add missing hints or migrate all links. `validate` stays read-only and reports stale hints as diagnostics; run `--dry-run` before writing sidecars.
+`sync` updates existing `pathHint` values from resolved link targets. It does not add missing hints, migrate all links, or update acknowledged revisions. `validate` stays read-only and reports stale hints as diagnostics; run `--dry-run` before writing sidecars.
 
 ## Link
 
@@ -70,9 +71,29 @@ Use when adding, removing, or updating outgoing links on an existing sidecar-bac
 relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint
 relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint
 relaygraph link remove id:docs.feature.example realized-by:id:src.example
+relaygraph link acknowledge id:docs.feature.example realized-by:id:src.example
 ```
 
-`--path-hint` is a flag. It writes or refreshes `pathHint` from the resolved target ID. `--clear-path-hint` removes an existing hint. Use `--order <N>` or `--clear-order` when traversal order must be explicit.
+`--path-hint` is a flag. It writes or refreshes `pathHint` from the resolved target ID. `--clear-path-hint` removes an existing hint. Use `--order <N>` or `--clear-order` when traversal order must be explicit. `link acknowledge` records SHA-256 fingerprints for both endpoint files and upgrades the edited sidecar to schema version 2.
+
+### Acknowledged Relation Review Workflow
+
+Freshness checking is opt-in per relation. Run `link acknowledge` once after reviewing a relation to establish its baseline. Relations without acknowledged revisions do not produce freshness diagnostics.
+
+For example, suppose source A links to documentation B and a change to A may require B to follow it:
+
+1. A changes after the relation has been acknowledged.
+2. `relaygraph validate` reports `relation-review-required` with state `sourceChanged`. The default command succeeds with a warning; `relaygraph validate --strict` fails for CI.
+3. Review A and B together. If B must follow the change, update B. If B remains correct, no edit is required.
+4. When B is updated, validation reports `bothChanged` because both endpoints now differ from the last reviewed baseline. An edit alone never marks the relation as reviewed.
+5. After confirming that A and B are consistent, acknowledge the relation and validate again:
+
+```bash
+relaygraph link acknowledge id:source.a documented-by:id:docs.b
+relaygraph validate --strict
+```
+
+Use the relation configured by the repository in place of `documented-by`. If only the target changes, the diagnostic state is `targetChanged`; if both endpoints change, it is `bothChanged`. Do not acknowledge merely to make CI pass: acknowledgement records that a person or trusted workflow reviewed the current endpoint contents together. `sync` never performs this review or updates acknowledged revisions.
 
 ## Cache
 
@@ -128,6 +149,7 @@ When working inside the RelayGraph source repository and no installed binary is 
 
 ```bash
 cargo run -- validate --json
+cargo run -- validate --strict
 cargo run -- help generate
 cargo run -- sync --dry-run
 cargo run -- trace path:src/main.rs

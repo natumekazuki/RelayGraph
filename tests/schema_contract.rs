@@ -5,6 +5,23 @@ use relaygraph::export::to_export;
 use relaygraph::model::{BuildResult, Diagnostic, Plugin, ResolvedLink, Resource, Traversal};
 
 #[test]
+fn ci_exposes_and_enforces_strict_relation_validation() {
+    let action = include_str!("../action.yml");
+    let action_yaml: serde_yaml::Value = serde_yaml::from_str(action).unwrap();
+    let ci = include_str!("../.github/workflows/ci.yml");
+    let release = include_str!("../.github/workflows/release.yml");
+
+    assert_eq!(action_yaml["inputs"]["strict"]["default"], "false");
+    assert_eq!(
+        action_yaml["runs"]["steps"][3]["env"]["RELAYGRAPH_STRICT"],
+        "${{ inputs.strict }}"
+    );
+    assert!(action.contains("$validateArgs += \"--strict\""));
+    assert!(ci.contains("cargo run --locked -- validate --strict"));
+    assert!(release.contains("cargo run --locked -- validate --strict"));
+}
+
+#[test]
 fn json_schema_documents_are_parseable_and_strict() {
     for schema in [
         include_str!("../docs/schema/config.schema.json"),
@@ -56,6 +73,7 @@ fn export_output_matches_documented_contract() {
                         target_path: Some("target.md".to_string()),
                         target_id: None,
                         order: Some(1),
+                        acknowledged: None,
                     },
                     ResolvedLink {
                         rel: "x".to_string(),
@@ -64,6 +82,7 @@ fn export_output_matches_documented_contract() {
                         target_path: Some("target.md".to_string()),
                         target_id: Some("target".to_string()),
                         order: None,
+                        acknowledged: None,
                     },
                 ],
             },
@@ -291,6 +310,55 @@ fn sidecar_and_plugin_schema_reject_whitespace_only_names() {
     assert_schema_rejects(
         &serde_json::json!({"name": "ok", "relations": [" "]}),
         &plugin,
+    );
+}
+
+#[test]
+fn sidecar_schema_versions_relation_acknowledgement() {
+    let schema: Value =
+        serde_json::from_str(include_str!("../docs/schema/sidecar.schema.json")).unwrap();
+    let revision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let valid = serde_json::json!({
+        "schemaVersion": 2,
+        "id": "docs.root",
+        "links": [{
+            "rel": "realized-by",
+            "to": "id:src.main",
+            "acknowledged": {
+                "sourceRevision": revision,
+                "targetRevision": revision
+            }
+        }]
+    });
+    assert!(jsonschema::validator_for(&schema).unwrap().is_valid(&valid));
+    assert_schema_rejects(
+        &serde_json::json!({
+            "schemaVersion": 1,
+            "links": [{
+                "rel": "realized-by",
+                "to": "id:src.main",
+                "acknowledged": {
+                    "sourceRevision": revision,
+                    "targetRevision": revision
+                }
+            }]
+        }),
+        &schema,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({
+            "schemaVersion": 2,
+            "links": [{
+                "rel": "realized-by",
+                "to": "id:src.main",
+                "acknowledged": {
+                    "sourceRevision": "sha256:short",
+                    "targetRevision": revision
+                }
+            }]
+        }),
+        &schema,
     );
 }
 

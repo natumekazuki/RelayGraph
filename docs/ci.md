@@ -21,6 +21,7 @@ jobs:
 
       - uses: natumekazuki/RelayGraph@v1.0.0
         with:
+          strict: "true"
           export: "true"
           cache: "true"
 ```
@@ -28,7 +29,9 @@ jobs:
 Pin `uses:` to a release tag for reproducible CI. The action installs the CLI
 with `cargo install --git` from that tag, so it works on GitHub-hosted Linux,
 macOS, and Windows runners without requiring prebuilt release assets for every
-platform.
+platform. Set `strict: "true"` to fail when an acknowledged relation requires
+review. The default is `"false"` for compatibility with repositories that use
+freshness diagnostics as warnings.
 
 For a monorepo or nested project, set `working-directory`:
 
@@ -48,6 +51,6 @@ For branch testing before a release, pin both the action and install ref:
           ref: master
 ```
 
-The action always runs `relaygraph validate --json`. `export` and `cache` are
-optional because they write generated files under the reserved `._relaygraph/`
-directory.
+The action runs `relaygraph validate --json`, adding `--strict` when the strict
+input is enabled. `export` and `cache` are optional because they write generated
+files under the reserved `._relaygraph/` directory.

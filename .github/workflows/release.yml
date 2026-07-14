@@ -51,6 +51,17 @@ jobs:
           if ($head -ne $tagCommit) {
             throw "Checked out commit $head does not match refs/tags/$env:RELEASE_TAG ($tagCommit)"
           }
+          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packages = @($metadata.packages | Where-Object { $_.name -eq "relaygraph" })
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one relaygraph package, found $($packages.Count)"
+          }
+          $packageVersion = $packages[0].version
+          $expectedTag = "v$packageVersion"
+          if ($env:RELEASE_TAG -ne $expectedTag) {
+            throw "Release tag $env:RELEASE_TAG does not match Cargo.toml package version $packageVersion (expected $expectedTag)"
+          }
 
       - name: Format
         run: cargo fmt -- --check
@@ -59,7 +70,7 @@ jobs:
         run: cargo test --locked
 
       - name: Validate RelayGraph
-        run: cargo run --locked -- validate
+        run: cargo run --locked -- validate --strict
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -69,7 +80,15 @@ jobs:
 
       - name: Smoke release executable without plugin files
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          $expectedVersion = $env:RELEASE_TAG.TrimStart("v")
+          $actualVersion = & "${{ github.workspace }}/target/release/${{ matrix.binary }}" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($actualVersion -ne "relaygraph $expectedVersion") {
+            throw "Release binary reported '$actualVersion' (expected 'relaygraph $expectedVersion')"
+          }
           $smoke = Join-Path $env:RUNNER_TEMP "relaygraph-release-smoke"
           New-Item -ItemType Directory -Force $smoke | Out-Null
           Push-Location $smoke

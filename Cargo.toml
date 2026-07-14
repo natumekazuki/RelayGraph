@@ -1,6 +1,6 @@
 [package]
 name = "relaygraph"
-version = "0.1.0"
+version = "1.2.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Build deterministic resource graphs from Git-backed YAML declarations"
@@ -16,6 +16,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+sha2 = "0.10"
 tempfile = "3.23"
 
 [dev-dependencies]

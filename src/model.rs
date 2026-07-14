@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 
 pub const CONFIG_PATH: &str = ".relaygraph.yaml";
 pub const DEFAULT_SIDECAR_SUFFIX: &str = ".relaygraph.yaml";
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
+pub const CONFIG_SCHEMA_VERSION: u32 = 1;
+pub const PLUGIN_SCHEMA_VERSION: u32 = 1;
+pub const SIDECAR_SCHEMA_VERSION_V1: u32 = 1;
+pub const SIDECAR_SCHEMA_VERSION_V2: u32 = 2;
+pub const LATEST_SIDECAR_SCHEMA_VERSION: u32 = SIDECAR_SCHEMA_VERSION_V2;
 pub const CACHE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
@@ -36,7 +40,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            schema_version: Some(SUPPORTED_SCHEMA_VERSION),
+            schema_version: Some(CONFIG_SCHEMA_VERSION),
             use_git_ignore: Some(true),
             sidecar_suffix: Some(DEFAULT_SIDECAR_SUFFIX.to_string()),
             plugins: Some(vec!["relaygraph/plugins/feature-trace.yaml".to_string()]),
@@ -87,6 +91,19 @@ pub struct Link {
     #[serde(default, deserialize_with = "optional_no_null")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged: Option<AcknowledgedRevisions>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcknowledgedRevisions {
+    pub source_revision: String,
+    pub target_revision: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,6 +167,7 @@ pub struct ResolvedLink {
     pub target_path: Option<String>,
     pub target_id: Option<String>,
     pub order: Option<i64>,
+    pub acknowledged: Option<AcknowledgedRevisions>,
 }
 
 #[derive(Debug)]

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::diagnostic::validate_schema_version;
-use crate::model::{Config, Diagnostic, Plugin, CONFIG_PATH};
+use crate::model::{Config, Diagnostic, Plugin, CONFIG_PATH, PLUGIN_SCHEMA_VERSION};
 use crate::repo::is_reserved_generated_path;
 use crate::util::{is_repo_boundary_link, normalize_repo_path, normalize_repo_path_strict};
 
@@ -49,7 +49,13 @@ pub fn load_plugins(
 
         match loaded {
             Ok(plugin) => {
-                validate_schema_version(plugin.schema_version, path, diagnostics);
+                validate_schema_version(
+                    plugin.schema_version,
+                    PLUGIN_SCHEMA_VERSION,
+                    &[PLUGIN_SCHEMA_VERSION],
+                    path,
+                    diagnostics,
+                );
                 validate_plugin_definition(&plugin, path, diagnostics);
                 if let Some(existing) = plugin_names.get(&plugin.name) {
                     diagnostics.push(Diagnostic {

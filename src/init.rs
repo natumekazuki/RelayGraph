@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 
 use crate::config::{sidecar_suffix, validate_config_values};
 use crate::diagnostic::{diagnostics_to_message, validate_schema_version};
-use crate::model::{Config, Sidecar, CONFIG_PATH};
+use crate::model::{Config, Sidecar, CONFIG_PATH, CONFIG_SCHEMA_VERSION};
 use crate::plugin::{configured_plugin_paths, load_plugins};
 use crate::repo::{is_git_ignored, list_repo_files};
 use crate::util::{display_path, globset, is_repo_boundary_link, matches_glob};
@@ -15,7 +15,13 @@ use crate::util::{display_path, globset, is_repo_boundary_link, matches_glob};
 pub fn init_missing_sidecars(root: &Path, config: &Config, dry_run: bool) -> Result<Vec<String>> {
     let suffix = sidecar_suffix(config);
     let mut diagnostics = Vec::new();
-    validate_schema_version(config.schema_version, CONFIG_PATH, &mut diagnostics);
+    validate_schema_version(
+        config.schema_version,
+        CONFIG_SCHEMA_VERSION,
+        &[CONFIG_SCHEMA_VERSION],
+        CONFIG_PATH,
+        &mut diagnostics,
+    );
     validate_config_values(config, &mut diagnostics);
     let exclude = globset(config.exclude.as_deref().unwrap_or(&[]), &mut diagnostics);
     let require_sidecar = globset(

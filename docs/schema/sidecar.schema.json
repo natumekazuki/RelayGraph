@@ -7,7 +7,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "enum": [1, 2]
     },
     "id": {
       "type": "string",
@@ -44,10 +44,47 @@
           },
           "order": {
             "type": "integer"
+          },
+          "acknowledged": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceRevision", "targetRevision"],
+            "properties": {
+              "sourceRevision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "targetRevision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
           }
         }
       },
       "default": []
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["links"],
+        "properties": {
+          "links": {
+            "contains": {
+              "required": ["acknowledged"]
+            }
+          }
+        }
+      },
+      "then": {
+        "required": ["schemaVersion"],
+        "properties": {
+          "schemaVersion": {
+            "const": 2
+          }
+        }
+      }
+    }
+  ]
 }

@@ -1,4 +1,4 @@
-schemaVersion: 1
+schemaVersion: 2
 id: docs.features.cli
 kind: module
 links:
@@ -18,6 +18,16 @@ links:
     to: id:src.link-edit
     pathHint: src/link_edit.rs
     order: 28
+    acknowledged:
+      sourceRevision: sha256:63c37e9a8a43cc2dc9b2f4004f9173bce955c93c28666d5a6fb8bdbf7a7f5515
+      targetRevision: sha256:47d1d2b11f807f2fa583506431de1042f882276e61e616e3a7076e7f1e6f8293
   - rel: verified-by
     to: path:tests/cli.rs
     order: 30
+  - rel: realized-by
+    to: id:src.freshness
+    pathHint: src/freshness.rs
+    order: 29
+    acknowledged:
+      sourceRevision: sha256:63c37e9a8a43cc2dc9b2f4004f9173bce955c93c28666d5a6fb8bdbf7a7f5515
+      targetRevision: sha256:c80d54728d057b873379dd4b1fd0736d941ea96319dd1d12424637d81622893f
