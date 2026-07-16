@@ -134,6 +134,9 @@ enum LinkCommands {
         /// Outgoing link in rel:id form.
         #[arg(value_parser = parse_id_link)]
         link: GenerateLink,
+        /// Explain why this link exists.
+        #[arg(long)]
+        reason: Option<String>,
         /// Write pathHint resolved from the target id.
         #[arg(long)]
         path_hint: bool,
@@ -171,6 +174,12 @@ enum LinkCommands {
         /// Remove pathHint.
         #[arg(long)]
         clear_path_hint: bool,
+        /// Set the reason this link exists.
+        #[arg(long)]
+        reason: Option<String>,
+        /// Remove the link reason.
+        #[arg(long)]
+        clear_reason: bool,
         /// Set explicit traversal order.
         #[arg(long)]
         order: Option<i64>,
@@ -493,7 +502,16 @@ fn print_trace_result(trace: &TraceResult, json: bool, format: TraceFormat) -> R
                     println!("{}", node.path);
                     continue;
                 };
-                println!("{} --{}--> {}", via.from, via.rel, via.to);
+                match &via.reason {
+                    Some(reason) => println!(
+                        "{} --{}--> {} reason={}",
+                        via.from,
+                        via.rel,
+                        via.to,
+                        serde_json::to_string(reason)?
+                    ),
+                    None => println!("{} --{}--> {}", via.from, via.rel, via.to),
+                }
             }
         }
     }
@@ -752,6 +770,7 @@ fn link_command(
         LinkCommands::Add {
             source,
             link,
+            reason,
             path_hint,
             order,
             dry_run,
@@ -761,6 +780,7 @@ fn link_command(
             AddLinkOptions {
                 common: LinkEditOptions { source, dry_run },
                 link,
+                reason,
                 path_hint,
                 order,
             },
@@ -783,6 +803,8 @@ fn link_command(
             new_link,
             path_hint,
             clear_path_hint,
+            reason,
+            clear_reason,
             order,
             clear_order,
             dry_run,
@@ -795,6 +817,8 @@ fn link_command(
                 new_link,
                 path_hint,
                 clear_path_hint,
+                reason,
+                clear_reason,
                 order,
                 clear_order,
             },

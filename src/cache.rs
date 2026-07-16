@@ -30,6 +30,7 @@ pub struct CacheLink {
     source_path: String,
     rel: String,
     target_locator: String,
+    reason: Option<String>,
     target_path: Option<String>,
     target_id: Option<String>,
     #[serde(skip_serializing)]
@@ -49,6 +50,7 @@ struct CacheTraceEdge {
     target_path: String,
     target_locator: String,
     rel: String,
+    reason: Option<String>,
     relation_rank: Option<i64>,
     order: Option<i64>,
     traversal: TraceTraversal,
@@ -138,17 +140,19 @@ fn write_cache_file(path: &Path, graph: &BuildResult) -> Result<()> {
                     source_path,
                     rel,
                     target_locator,
+                    reason,
                     target_path,
                     target_id,
                     relation_rank,
                     link_order
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 "#,
                 params![
                     resource.path.as_str(),
                     link.rel.as_str(),
                     link.to.as_str(),
+                    link.reason.as_deref(),
                     link.target_path.as_deref(),
                     link.target_id.as_deref(),
                     relation_rank
@@ -339,6 +343,7 @@ pub fn cache_trace(path: &Path, from: &str, direction: Direction) -> Result<Trac
                         target_path: target_path.clone(),
                         target_locator: link.target_locator.clone(),
                         rel: link.rel.clone(),
+                        reason: link.reason.clone(),
                         relation_rank: link.relation_rank,
                         order: link.order,
                         traversal: TraceTraversal::Outgoing,
@@ -356,6 +361,7 @@ pub fn cache_trace(path: &Path, from: &str, direction: Direction) -> Result<Trac
                         target_path: link.source_path.clone(),
                         target_locator: format!("path:{}", link.source_path),
                         rel: link.rel.clone(),
+                        reason: link.reason.clone(),
                         relation_rank: link.relation_rank,
                         order: link.order,
                         traversal: TraceTraversal::Incoming,
@@ -394,6 +400,7 @@ pub fn cache_trace(path: &Path, from: &str, direction: Direction) -> Result<Trac
                     Some(TraceVia {
                         traversal: link.traversal,
                         rel: link.rel.clone(),
+                        reason: link.reason.clone(),
                         from: link.from.clone(),
                         to: link.to.clone(),
                     }),
@@ -702,6 +709,7 @@ fn ensure_cache_tables(connection: &Connection, path: &Path) -> Result<()> {
                 "source_path",
                 "rel",
                 "target_locator",
+                "reason",
                 "target_path",
                 "target_id",
                 "relation_rank",
@@ -881,7 +889,7 @@ fn resolve_cache_resource_path_optional(
 fn read_cache_links(connection: &Connection) -> Result<Vec<CacheLink>> {
     let mut statement = connection.prepare(
         r#"
-        SELECT source_path, rel, target_locator, target_path, target_id, relation_rank, link_order
+        SELECT source_path, rel, target_locator, reason, target_path, target_id, relation_rank, link_order
         FROM links
         ORDER BY COALESCE(link_order, 9223372036854775807),
                  COALESCE(relation_rank, 9223372036854775807),
@@ -895,10 +903,11 @@ fn read_cache_links(connection: &Connection) -> Result<Vec<CacheLink>> {
             source_path: row.get(0)?,
             rel: row.get(1)?,
             target_locator: row.get(2)?,
-            target_path: row.get(3)?,
-            target_id: row.get(4)?,
-            relation_rank: row.get(5)?,
-            order: row.get(6)?,
+            reason: row.get(3)?,
+            target_path: row.get(4)?,
+            target_id: row.get(5)?,
+            relation_rank: row.get(6)?,
+            order: row.get(7)?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -951,12 +960,12 @@ mod tests {
         connection
             .execute_batch(
                 r#"
-                PRAGMA user_version = 1;
+                PRAGMA user_version = 2;
                 CREATE TABLE metadata (
                     key TEXT PRIMARY KEY NOT NULL,
                     value TEXT NOT NULL
                 );
-                INSERT INTO metadata (key, value) VALUES ('cacheSchemaVersion', '1');
+                INSERT INTO metadata (key, value) VALUES ('cacheSchemaVersion', '2');
                 "#,
             )
             .unwrap();
@@ -972,21 +981,21 @@ mod tests {
     }
 
     #[test]
-    fn cache_schema_validation_rejects_wrong_user_version() {
+    fn cache_schema_validation_rejects_old_user_version() {
         let root = temp_root("relaygraph-cache-user-version");
         fs::create_dir_all(&root).unwrap();
         let cache_path = root.join("relaygraph.sqlite");
 
         write_cache(&cache_path, &empty_graph()).unwrap();
         let connection = Connection::open(&cache_path).unwrap();
-        connection.pragma_update(None, "user_version", 999).unwrap();
+        connection.pragma_update(None, "user_version", 1).unwrap();
         drop(connection);
 
         let result = cache_resources(&cache_path, None);
 
         assert!(result.is_err());
         let message = format!("{:#}", result.unwrap_err());
-        assert!(message.contains("unsupported sqlite cache user_version 999"));
+        assert!(message.contains("unsupported sqlite cache user_version 1"));
         assert!(message.contains("run `relaygraph cache rebuild`"));
         let _ = fs::remove_dir_all(root);
     }
@@ -1050,12 +1059,12 @@ mod tests {
         connection
             .execute_batch(
                 r#"
-                PRAGMA user_version = 1;
+                PRAGMA user_version = 2;
                 CREATE TABLE metadata (
                     key TEXT PRIMARY KEY NOT NULL,
                     value TEXT NOT NULL
                 );
-                INSERT INTO metadata (key, value) VALUES ('cacheSchemaVersion', '1');
+                INSERT INTO metadata (key, value) VALUES ('cacheSchemaVersion', '2');
                 CREATE TABLE plugins (
                     name TEXT PRIMARY KEY NOT NULL,
                     traversal_json TEXT
@@ -1071,6 +1080,7 @@ mod tests {
                     source_path TEXT NOT NULL,
                     rel TEXT NOT NULL,
                     target_locator TEXT NOT NULL,
+                    reason TEXT,
                     target_path TEXT,
                     target_id TEXT,
                     relation_rank INTEGER,

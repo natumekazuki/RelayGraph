@@ -10,6 +10,7 @@ Responsibilities:
 - Preserve deterministic relation ordering.
 - Print direction-aware trace output for humans.
 - Provide structured trace JSON for AI agents and external tooling.
+- Project optional link reasons through outgoing, incoming, and traversed relations.
 
 Trace output modes:
 
@@ -17,7 +18,7 @@ Trace output modes:
 - `--json` prints a stable object with the start resource, requested direction, and ordered nodes.
 - `--format paths` preserves path-only output for scripts that only need the reachable file list.
 
-Each structured trace node includes `depth` and, except for the start node, a `via` object with `traversal`, `rel`, `from`, and `to`. `from` and `to` always describe the declared relation direction; `traversal` describes whether the trace moved outgoing or incoming from the previously visited node.
+Each structured trace node includes `depth` and, except for the start node, a `via` object with `traversal`, `rel`, `reason`, `from`, and `to`. `from` and `to` always describe the declared relation direction; `traversal` describes whether the trace moved outgoing or incoming from the previously visited node. JSON projections include `reason: null` when no reason is declared. Relation-oriented text output appends a JSON-quoted reason only when one exists.
 
 Implementation:
 

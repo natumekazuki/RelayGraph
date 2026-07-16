@@ -8,8 +8,9 @@ use crate::config::{sidecar_suffix, validate_config_values};
 use crate::diagnostic::validate_schema_version;
 use crate::locator::parse_locator;
 use crate::model::{
-    BuildResult, Config, Diagnostic, Locator, ResolvedLink, Resource, Sidecar, CONFIG_PATH,
-    CONFIG_SCHEMA_VERSION, SIDECAR_SCHEMA_VERSION_V1, SIDECAR_SCHEMA_VERSION_V2,
+    validate_link_reason, BuildResult, Config, Diagnostic, Locator, ResolvedLink, Resource,
+    Sidecar, CONFIG_PATH, CONFIG_SCHEMA_VERSION, SIDECAR_SCHEMA_VERSION_V1,
+    SIDECAR_SCHEMA_VERSION_V2, SIDECAR_SCHEMA_VERSION_V3,
 };
 use crate::plugin::{build_relation_rank, configured_plugin_paths, load_plugins};
 use crate::repo::list_repo_files_with_diagnostics;
@@ -107,7 +108,11 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
             validate_schema_version(
                 sidecar.schema_version,
                 SIDECAR_SCHEMA_VERSION_V1,
-                &[SIDECAR_SCHEMA_VERSION_V1, SIDECAR_SCHEMA_VERSION_V2],
+                &[
+                    SIDECAR_SCHEMA_VERSION_V1,
+                    SIDECAR_SCHEMA_VERSION_V2,
+                    SIDECAR_SCHEMA_VERSION_V3,
+                ],
                 sidecar_path,
                 &mut diagnostics,
             );
@@ -202,6 +207,7 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                     ResolvedLink {
                         rel: link.rel,
                         to: link.to,
+                        reason: link.reason,
                         path_hint: link.path_hint,
                         target_path,
                         target_id: Some(id),
@@ -240,6 +246,7 @@ pub fn build_graph(root: &Path, config: &Config) -> Result<BuildResult> {
                     ResolvedLink {
                         rel: link.rel,
                         to: link.to,
+                        reason: link.reason,
                         path_hint: link.path_hint,
                         target_path,
                         target_id: None,
@@ -380,18 +387,58 @@ fn validate_sidecar_definition(sidecar: &Sidecar, path: &str, diagnostics: &mut 
         });
     }
     for link in &sidecar.links {
-        if link.acknowledged.is_some() && schema_version != SIDECAR_SCHEMA_VERSION_V2 {
+        if link.acknowledged.is_some()
+            && !matches!(
+                schema_version,
+                SIDECAR_SCHEMA_VERSION_V2 | SIDECAR_SCHEMA_VERSION_V3
+            )
+        {
             diagnostics.push(Diagnostic {
                 code: "schema-error",
                 path: Some(path.to_string()),
-                message: "link.acknowledged requires sidecar schemaVersion 2".to_string(),
+                message: "link.acknowledged requires sidecar schemaVersion 2 or 3".to_string(),
+            });
+        }
+        if link.reason.is_some() && schema_version != SIDECAR_SCHEMA_VERSION_V3 {
+            diagnostics.push(Diagnostic {
+                code: "schema-error",
+                path: Some(path.to_string()),
+                message: "link.reason requires sidecar schemaVersion 3".to_string(),
+            });
+        }
+        if let Err(message) = validate_link_reason(link.reason.as_deref()) {
+            diagnostics.push(Diagnostic {
+                code: "schema-error",
+                path: Some(path.to_string()),
+                message: message.to_string(),
             });
         }
         if let Some(acknowledged) = &link.acknowledged {
+            if schema_version == SIDECAR_SCHEMA_VERSION_V3 && acknowledged.link_revision.is_none() {
+                diagnostics.push(Diagnostic {
+                    code: "schema-error",
+                    path: Some(path.to_string()),
+                    message:
+                        "link.acknowledged.linkRevision is required in sidecar schemaVersion 3"
+                            .to_string(),
+                });
+            }
+            if schema_version == SIDECAR_SCHEMA_VERSION_V2 && acknowledged.link_revision.is_some() {
+                diagnostics.push(Diagnostic {
+                    code: "schema-error",
+                    path: Some(path.to_string()),
+                    message: "link.acknowledged.linkRevision requires sidecar schemaVersion 3"
+                        .to_string(),
+                });
+            }
             for (field, revision) in [
-                ("sourceRevision", &acknowledged.source_revision),
-                ("targetRevision", &acknowledged.target_revision),
+                ("sourceRevision", Some(&acknowledged.source_revision)),
+                ("targetRevision", Some(&acknowledged.target_revision)),
+                ("linkRevision", acknowledged.link_revision.as_ref()),
             ] {
+                let Some(revision) = revision else {
+                    continue;
+                };
                 if !valid_sha256_revision(revision) {
                     diagnostics.push(Diagnostic {
                         code: "schema-error",

@@ -19,8 +19,8 @@ links:
     pathHint: src/link_edit.rs
     order: 28
     acknowledged:
-      sourceRevision: sha256:63c37e9a8a43cc2dc9b2f4004f9173bce955c93c28666d5a6fb8bdbf7a7f5515
-      targetRevision: sha256:47d1d2b11f807f2fa583506431de1042f882276e61e616e3a7076e7f1e6f8293
+      sourceRevision: sha256:826f7bf64394e064c1e192086b4052664bd3477829414147aba6e62299f1dc19
+      targetRevision: sha256:790598d3a6a581263714b1a6898cf95ac1a4abf526f5316ee898a5062a9c0205
   - rel: verified-by
     to: path:tests/cli.rs
     order: 30
@@ -29,5 +29,5 @@ links:
     pathHint: src/freshness.rs
     order: 29
     acknowledged:
-      sourceRevision: sha256:63c37e9a8a43cc2dc9b2f4004f9173bce955c93c28666d5a6fb8bdbf7a7f5515
-      targetRevision: sha256:c80d54728d057b873379dd4b1fd0736d941ea96319dd1d12424637d81622893f
+      sourceRevision: sha256:826f7bf64394e064c1e192086b4052664bd3477829414147aba6e62299f1dc19
+      targetRevision: sha256:4c8bce3d931658552b67320e2d87232feabf6e451f46b485afccfbfeb70e42be

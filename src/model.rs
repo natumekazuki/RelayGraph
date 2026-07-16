@@ -9,8 +9,9 @@ pub const CONFIG_SCHEMA_VERSION: u32 = 1;
 pub const PLUGIN_SCHEMA_VERSION: u32 = 1;
 pub const SIDECAR_SCHEMA_VERSION_V1: u32 = 1;
 pub const SIDECAR_SCHEMA_VERSION_V2: u32 = 2;
-pub const LATEST_SIDECAR_SCHEMA_VERSION: u32 = SIDECAR_SCHEMA_VERSION_V2;
-pub const CACHE_SCHEMA_VERSION: u32 = 1;
+pub const SIDECAR_SCHEMA_VERSION_V3: u32 = 3;
+pub const LATEST_SIDECAR_SCHEMA_VERSION: u32 = SIDECAR_SCHEMA_VERSION_V3;
+pub const CACHE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -87,6 +88,12 @@ pub struct Link {
         deserialize_with = "optional_no_null",
         skip_serializing_if = "Option::is_none"
     )]
+    pub reason: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub path_hint: Option<String>,
     #[serde(default, deserialize_with = "optional_no_null")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +111,12 @@ pub struct Link {
 pub struct AcknowledgedRevisions {
     pub source_revision: String,
     pub target_revision: String,
+    #[serde(
+        default,
+        deserialize_with = "optional_no_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub link_revision: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,11 +176,19 @@ pub struct Resource {
 pub struct ResolvedLink {
     pub rel: String,
     pub to: String,
+    pub reason: Option<String>,
     pub path_hint: Option<String>,
     pub target_path: Option<String>,
     pub target_id: Option<String>,
     pub order: Option<i64>,
     pub acknowledged: Option<AcknowledgedRevisions>,
+}
+
+pub fn validate_link_reason(reason: Option<&str>) -> Result<(), &'static str> {
+    if reason.is_some_and(|reason| reason.trim().is_empty()) {
+        return Err("link.reason must not be empty");
+    }
+    Ok(())
 }
 
 #[derive(Debug)]

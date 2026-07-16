@@ -12,6 +12,7 @@ struct TraceEdge {
     target_path: String,
     target_locator: String,
     rel: String,
+    reason: Option<String>,
     order: Option<i64>,
     relation_rank: usize,
     traversal: TraceTraversal,
@@ -59,6 +60,7 @@ pub struct TraceNode {
 pub struct TraceVia {
     pub traversal: TraceTraversal,
     pub rel: String,
+    pub reason: Option<String>,
     pub from: String,
     pub to: String,
 }
@@ -135,6 +137,7 @@ pub fn trace_from(
                     target_path: target_path.clone(),
                     target_locator: link.to.clone(),
                     rel: link.rel.clone(),
+                    reason: link.reason.clone(),
                     order: link.order,
                     relation_rank: relation_rank
                         .get(link.rel.as_str())
@@ -156,6 +159,7 @@ pub fn trace_from(
                         target_path: source.path.clone(),
                         target_locator: format!("path:{}", source.path),
                         rel: link.rel.clone(),
+                        reason: link.reason.clone(),
                         order: link.order,
                         relation_rank: relation_rank
                             .get(link.rel.as_str())
@@ -188,6 +192,7 @@ pub fn trace_from(
             via: Some(TraceVia {
                 traversal: edge.traversal,
                 rel: edge.rel,
+                reason: edge.reason,
                 from: edge.from,
                 to: edge.to,
             }),

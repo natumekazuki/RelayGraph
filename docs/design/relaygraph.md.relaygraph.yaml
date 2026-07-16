@@ -1,4 +1,4 @@
-schemaVersion: 2
+schemaVersion: 3
 id: docs.design.relaygraph
 kind: feature-root
 links:
@@ -37,5 +37,11 @@ links:
     pathHint: docs/adr/0001-sidecar-schema-versioning-and-relation-freshness.md
     order: 55
     acknowledged:
-      sourceRevision: sha256:c23b76a2597750bf888475996a522c775850501eaf9ca43b6fdb0af1e9565ae7
-      targetRevision: sha256:c576e30e0694799fdb9062de830ccbba814b14009aa14cf978c2493a31e23bfa
+      sourceRevision: sha256:51949985fdea45398ae81cf0be71c5c63da2a0156970e0924e2ad387f988a9c7
+      targetRevision: sha256:7339bf1cf27954277f7525997d206beca34571975686e9b5b75525ba40b5cc83
+      linkRevision: sha256:dcd030da9224f45e8179010c37e97f9b84534a7436a33c961d149ce174bfff54
+  - rel: decomposes-to
+    to: id:docs.adr.0002.link-reason-contract
+    pathHint: docs/adr/0002-link-reason-contract.md
+    reason: "Records link reason and cache version decisions"
+    order: 56

@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE metadata (
     key TEXT PRIMARY KEY NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE metadata (
 
 -- Required row:
 -- key = 'cacheSchemaVersion'
--- value = '1'
+-- value = '2'
 
 CREATE TABLE plugins (
     name TEXT PRIMARY KEY NOT NULL,
@@ -27,6 +27,7 @@ CREATE TABLE links (
     source_path TEXT NOT NULL,
     rel TEXT NOT NULL,
     target_locator TEXT NOT NULL,
+    reason TEXT,
     target_path TEXT,
     target_id TEXT,
     relation_rank INTEGER,

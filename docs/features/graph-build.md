@@ -9,6 +9,7 @@ Responsibilities:
 - Resolve `id:` and `path:` locators.
 - Validate sidecar schema, plugin vocabulary, and plugin rules.
 - Preserve deterministic link ordering.
+- Validate non-blank link reasons and version-specific acknowledgement fingerprints.
 
 Implementation:
 
