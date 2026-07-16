@@ -44,6 +44,7 @@ fn cache_schema_documents_versioned_tables_and_indexes() {
     let schema = include_str!("../docs/schema/cache-schema.sql");
 
     assert!(schema.contains("cacheSchemaVersion"));
+    assert!(schema.contains("PRAGMA user_version = 2"));
     assert!(schema.contains("CREATE TABLE metadata"));
     assert!(schema.contains("CREATE TABLE plugins"));
     assert!(schema.contains("CREATE TABLE resources"));
@@ -51,6 +52,7 @@ fn cache_schema_documents_versioned_tables_and_indexes() {
     assert!(schema.contains("CREATE TABLE diagnostics"));
     assert!(schema.contains("CREATE INDEX resources_id_idx"));
     assert!(schema.contains("relation_rank INTEGER"));
+    assert!(schema.contains("reason TEXT"));
 }
 
 #[test]
@@ -69,6 +71,7 @@ fn export_output_matches_documented_contract() {
                     ResolvedLink {
                         rel: "x".to_string(),
                         to: "path:target.md".to_string(),
+                        reason: Some("load the target document".to_string()),
                         path_hint: None,
                         target_path: Some("target.md".to_string()),
                         target_id: None,
@@ -78,6 +81,7 @@ fn export_output_matches_documented_contract() {
                     ResolvedLink {
                         rel: "x".to_string(),
                         to: "id:target".to_string(),
+                        reason: None,
                         path_hint: Some("target.md".to_string()),
                         target_path: Some("target.md".to_string()),
                         target_id: Some("target".to_string()),
@@ -166,6 +170,15 @@ fn export_output_matches_documented_contract() {
         &schema["properties"]["plugins"]["items"]["properties"]["traversal"],
     );
     assert!(output["resources"][0]["links"][0]["targetId"].is_null());
+    assert_eq!(
+        output["resources"][0]["links"][0]["reason"],
+        "load the target document"
+    );
+    assert_eq!(
+        output["resources"][1]["incomingLinks"][0]["reason"],
+        "load the target document"
+    );
+    assert!(output["resources"][0]["links"][1]["reason"].is_null());
     assert!(output["resources"][0]["links"][1]["order"].is_null());
     assert_eq!(output["resources"][0]["links"][1]["pathHint"], "target.md");
     assert!(output["diagnostics"][1]["path"].is_null());
@@ -314,7 +327,7 @@ fn sidecar_and_plugin_schema_reject_whitespace_only_names() {
 }
 
 #[test]
-fn sidecar_schema_versions_relation_acknowledgement() {
+fn sidecar_schema_versions_relation_acknowledgement_and_reason() {
     let schema: Value =
         serde_json::from_str(include_str!("../docs/schema/sidecar.schema.json")).unwrap();
     let revision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -332,6 +345,53 @@ fn sidecar_schema_versions_relation_acknowledgement() {
         }]
     });
     assert!(jsonschema::validator_for(&schema).unwrap().is_valid(&valid));
+    let valid_v3 = serde_json::json!({
+        "schemaVersion": 3,
+        "id": "docs.root",
+        "links": [{
+            "rel": "realized-by",
+            "to": "id:src.main",
+            "reason": "loads the implementation",
+            "acknowledged": {
+                "sourceRevision": revision,
+                "targetRevision": revision,
+                "linkRevision": revision
+            }
+        }]
+    });
+    assert!(jsonschema::validator_for(&schema)
+        .unwrap()
+        .is_valid(&valid_v3));
+    assert_schema_rejects(
+        &serde_json::json!({
+            "schemaVersion": 3,
+            "links": [{
+                "rel": "realized-by",
+                "to": "id:src.main",
+                "reason": "loads the implementation",
+                "acknowledged": {
+                    "sourceRevision": revision,
+                    "targetRevision": revision
+                }
+            }]
+        }),
+        &schema,
+    );
+    assert_schema_rejects(
+        &serde_json::json!({
+            "schemaVersion": 2,
+            "links": [{
+                "rel": "realized-by",
+                "to": "id:src.main",
+                "acknowledged": {
+                    "sourceRevision": revision,
+                    "targetRevision": revision,
+                    "linkRevision": revision
+                }
+            }]
+        }),
+        &schema,
+    );
     assert_schema_rejects(
         &serde_json::json!({
             "schemaVersion": 1,
@@ -346,6 +406,36 @@ fn sidecar_schema_versions_relation_acknowledgement() {
         }),
         &schema,
     );
+    for schema_version in [1, 2] {
+        assert_schema_rejects(
+            &serde_json::json!({
+                "schemaVersion": schema_version,
+                "links": [{
+                    "rel": "realized-by",
+                    "to": "id:src.main",
+                    "reason": "loads the implementation"
+                }]
+            }),
+            &schema,
+        );
+    }
+    for invalid_reason in [
+        serde_json::json!(null),
+        serde_json::json!(""),
+        serde_json::json!("   "),
+    ] {
+        assert_schema_rejects(
+            &serde_json::json!({
+                "schemaVersion": 3,
+                "links": [{
+                    "rel": "realized-by",
+                    "to": "id:src.main",
+                    "reason": invalid_reason
+                }]
+            }),
+            &schema,
+        );
+    }
     assert_schema_rejects(
         &serde_json::json!({
             "schemaVersion": 2,
@@ -444,4 +534,16 @@ fn cache_schema_applies_to_sqlite() {
             .unwrap();
         assert_eq!(count, 1, "missing table {table}");
     }
+    let user_version: u32 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(user_version, 2);
+    let link_columns = connection
+        .prepare("PRAGMA table_info(links)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert!(link_columns.iter().any(|column| column == "reason"));
 }

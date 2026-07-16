@@ -15,6 +15,10 @@ pub enum FreshnessState {
     SourceChanged,
     TargetChanged,
     BothChanged,
+    LinkChanged,
+    SourceAndLinkChanged,
+    TargetAndLinkChanged,
+    AllChanged,
 }
 
 #[derive(Debug, Serialize)]
@@ -34,6 +38,8 @@ pub struct RelationFreshnessDiagnostic {
 pub struct FreshnessRelation {
     pub rel: String,
     pub to: String,
+    pub acknowledged_revision: Option<String>,
+    pub current_revision: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,13 +67,23 @@ pub fn validate_relation_freshness(
 
             let source_revision = fingerprint_file(&root.join(&source.path))?;
             let target_revision = fingerprint_file(&root.join(target_path))?;
+            let link_revision =
+                fingerprint_link_revision(&link.rel, &link.to, link.reason.as_deref());
             let source_changed = source_revision != acknowledged.source_revision;
             let target_changed = target_revision != acknowledged.target_revision;
-            let state = match (source_changed, target_changed) {
-                (false, false) => continue,
-                (true, false) => FreshnessState::SourceChanged,
-                (false, true) => FreshnessState::TargetChanged,
-                (true, true) => FreshnessState::BothChanged,
+            let link_changed = acknowledged
+                .link_revision
+                .as_ref()
+                .is_some_and(|acknowledged| acknowledged != &link_revision);
+            let state = match (source_changed, target_changed, link_changed) {
+                (false, false, false) => continue,
+                (true, false, false) => FreshnessState::SourceChanged,
+                (false, true, false) => FreshnessState::TargetChanged,
+                (true, true, false) => FreshnessState::BothChanged,
+                (false, false, true) => FreshnessState::LinkChanged,
+                (true, false, true) => FreshnessState::SourceAndLinkChanged,
+                (false, true, true) => FreshnessState::TargetAndLinkChanged,
+                (true, true, true) => FreshnessState::AllChanged,
             };
             let sidecar_path = source
                 .sidecar
@@ -81,6 +97,8 @@ pub fn validate_relation_freshness(
                 relation: FreshnessRelation {
                     rel: link.rel.clone(),
                     to: link.to.clone(),
+                    acknowledged_revision: acknowledged.link_revision.clone(),
+                    current_revision: link_revision,
                 },
                 source: FreshnessEndpoint {
                     id: source.id.clone(),
@@ -118,11 +136,33 @@ pub fn acknowledged_revisions(
     root: &Path,
     source: &str,
     target: &str,
+    link_revision: Option<String>,
 ) -> Result<AcknowledgedRevisions> {
     Ok(AcknowledgedRevisions {
         source_revision: fingerprint_file(&root.join(source))?,
         target_revision: fingerprint_file(&root.join(target))?,
+        link_revision,
     })
+}
+
+pub fn fingerprint_link_revision(rel: &str, to: &str, reason: Option<&str>) -> String {
+    let mut payload = b"relaygraph-link-review-v1\0".to_vec();
+    append_fingerprint_component(&mut payload, rel.as_bytes());
+    append_fingerprint_component(&mut payload, to.as_bytes());
+    match reason {
+        Some(reason) => {
+            payload.push(1);
+            append_fingerprint_component(&mut payload, reason.as_bytes());
+        }
+        None => payload.push(0),
+    }
+    let digest = Sha256::digest(payload);
+    format!("sha256:{digest:x}")
+}
+
+fn append_fingerprint_component(payload: &mut Vec<u8>, component: &[u8]) {
+    payload.extend_from_slice(&(component.len() as u64).to_be_bytes());
+    payload.extend_from_slice(component);
 }
 
 pub fn fingerprint_file(path: &Path) -> Result<String> {
@@ -148,6 +188,43 @@ fn freshness_message(state: FreshnessState) -> String {
         FreshnessState::SourceChanged => "source revision changed after acknowledgement",
         FreshnessState::TargetChanged => "target revision changed after acknowledgement",
         FreshnessState::BothChanged => "source and target revisions changed after acknowledgement",
+        FreshnessState::LinkChanged => "link revision changed after acknowledgement",
+        FreshnessState::SourceAndLinkChanged => {
+            "source and link revisions changed after acknowledgement"
+        }
+        FreshnessState::TargetAndLinkChanged => {
+            "target and link revisions changed after acknowledgement"
+        }
+        FreshnessState::AllChanged => {
+            "source, target, and link revisions changed after acknowledgement"
+        }
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fingerprint_link_revision;
+
+    #[test]
+    fn link_revision_separates_each_component_and_component_boundaries() {
+        let baseline = fingerprint_link_revision("ab", "id:c", Some("reason"));
+        assert_ne!(
+            baseline,
+            fingerprint_link_revision("xy", "id:c", Some("reason"))
+        );
+        assert_ne!(
+            baseline,
+            fingerprint_link_revision("ab", "id:d", Some("reason"))
+        );
+        assert_ne!(
+            baseline,
+            fingerprint_link_revision("ab", "id:c", Some("other"))
+        );
+        assert_ne!(baseline, fingerprint_link_revision("ab", "id:c", None));
+        assert_ne!(
+            fingerprint_link_revision("ab", "c", None),
+            fingerprint_link_revision("a", "bc", None)
+        );
+    }
 }

@@ -36,8 +36,8 @@ relaygraph validate --json
 relaygraph validate --strict
 relaygraph trace path:src/main.rs --json
 relaygraph trace id:docs.design.relaygraph
-relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint
-relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint
+relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint --reason "implements the feature"
+relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint --reason "uses the new implementation"
 relaygraph link remove id:docs.feature.example realized-by:id:src.example
 relaygraph link acknowledge id:docs.feature.example realized-by:id:src.example
 relaygraph export
@@ -52,7 +52,7 @@ When working inside the RelayGraph source repository and the binary is not insta
 ```bash
 cargo run -- validate --json
 cargo run -- trace path:src/main.rs --json
-cargo run -- link add id:docs.feature.example verified-by:id:tests.example --path-hint
+cargo run -- link add id:docs.feature.example verified-by:id:tests.example --path-hint --reason "verifies the feature"
 cargo run -- sync --dry-run
 cargo run -- cache rebuild
 ```
@@ -73,7 +73,7 @@ For initial graph granularity and repository pattern examples, read `references/
 
 ## Sidecars
 
-Sidecars use schema version 1 and repo-relative locators:
+Sidecars support schema versions 1–3; omitting `schemaVersion` means version 1. A baseline sidecar uses repo-relative locators:
 
 ```yaml
 schemaVersion: 1
@@ -85,15 +85,15 @@ links:
     pathHint: tests/cli.rs
 ```
 
-Schema version 2 is written by `link acknowledge` when a relation review records endpoint fingerprints. Run `validate --strict` in CI when stale acknowledged relations must fail validation. `sync` does not acknowledge relations.
+Schema version 2 is written by `link acknowledge` when a relation review records endpoint fingerprints. Schema version 3 adds optional non-blank link reasons and a required reviewed-link fingerprint for acknowledged links. `link add --reason` and `link update --reason` upgrade only the edited sidecar to version 3; `--clear-reason` removes a reason without downgrading the sidecar. CLI-authored reasons are explicitly quoted YAML strings. Run `validate --strict` in CI when endpoint or reviewed-link changes must fail validation. `sync` does not acknowledge relations.
 
-Use only resource kinds and relations allowed by the configured plugin. For schema examples, read `references/sidecar-v1.md`.
+Use only resource kinds and relations allowed by the configured plugin. For the supported sidecar versions and schema examples, read `references/sidecar-v1.md`.
 
-When editing existing sidecar links from the CLI, prefer `relaygraph link add|update|remove` instead of hand-editing YAML. Select the source resource with `id:<resource-id>`, use `rel:id:<target-id>` link arguments, and use `--path-hint` as a flag when the sidecar should store the target path resolved from the target ID.
+When editing existing sidecar links from the CLI, prefer `relaygraph link add|update|remove` instead of hand-editing YAML. Select the source resource with `id:<resource-id>`, use `rel:id:<target-id>` link arguments, use `--path-hint` when the sidecar should store the target path resolved from the target ID, and use `--reason <text>` when the dependency rationale belongs to the edge.
 
 ## Relation Review Workflow
 
-Freshness checking applies only to relations that have already been acknowledged. After either endpoint changes, inspect both resources and decide whether the related resource must follow the change. Make any required source, documentation, or test updates first, then run `link acknowledge` only after confirming that the relation is consistent again. If no follow-up edit is needed, acknowledge only after making that review explicitly.
+Freshness checking applies only to relations that have already been acknowledged. After either endpoint or a version 3 link's reviewed `rel`, `to`, or `reason` changes, inspect both resources and decide whether the related resource must follow the change. Make any required source, documentation, or test updates first, then run `link acknowledge` only after confirming that the relation is consistent again. If no follow-up edit is needed, acknowledge only after making that review explicitly.
 
 Editing the related resource does not clear the warning: the relation remains stale until it is reviewed and acknowledged. Use `validate --strict` in CI to prevent an unreviewed relation from being merged. For the diagnostic states and a complete example, read `references/cli.md`.
 

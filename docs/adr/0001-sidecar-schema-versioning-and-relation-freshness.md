@@ -1,7 +1,11 @@
 # ADR 0001: sidecar schema versioning and relation freshness
 
-- Status: Accepted
+- Status: Accepted; partially superseded by ADR 0002
 - Date: 2026-07-14
+
+## Supersession
+
+ADR 0002 supersedes this ADR where the text limits supported sidecars to versions 1 and 2, requires acknowledgement to be written as version 2, or limits freshness to endpoint fingerprints. Version 3 extends acknowledgement with a reviewed-link fingerprint while adding link reasons. The remaining versioning and file-fingerprint decisions stay in force.
 
 ## Context
 

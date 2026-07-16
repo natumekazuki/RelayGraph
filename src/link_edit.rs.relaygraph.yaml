@@ -6,5 +6,5 @@ links:
     to: id:tests.cli
     pathHint: tests/cli.rs
     acknowledged:
-      sourceRevision: sha256:47d1d2b11f807f2fa583506431de1042f882276e61e616e3a7076e7f1e6f8293
-      targetRevision: sha256:56da9bdd16a91a8997aac870519c7f82f5afa5667fa36c1f7d7007907c186c7b
+      sourceRevision: sha256:790598d3a6a581263714b1a6898cf95ac1a4abf526f5316ee898a5062a9c0205
+      targetRevision: sha256:333ca31555ab3975bf6f2e9f2d0821bad70a6b0e5251fdb962770353bfa1fd1a

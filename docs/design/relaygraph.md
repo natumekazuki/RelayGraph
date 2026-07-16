@@ -8,7 +8,7 @@ RelayGraph is a Rust CLI for building, validating, exporting, tracing, and cachi
 - Keep Git-backed YAML declarations as the source of truth.
 - Allow resources without sidecars as implicit resources.
 - Use optional `*.relaygraph.yaml` sidecars for stable IDs, metadata, and outgoing links.
-- Resolve only `id:` and `path:` locators in schema version 1.
+- Resolve only `id:` and `path:` locators across the supported sidecar versions.
 - Validate resource kinds, relations, required outgoing links, and required reachable kinds through YAML plugins.
 - Generate deterministic traversal and export output.
 - Provide a local SQLite cache for AI-agent and tooling use while keeping it fully rebuildable.
@@ -49,7 +49,7 @@ src/main.rs.relaygraph.yaml
 
 Sidecars are optional unless the path matches `requireSidecar`.
 
-Sidecar versions 1 and 2 are supported. Version 2 adds explicit relation acknowledgement. The machine-readable contract is `docs/schema/sidecar.schema.json`; versioning and fingerprint decisions are recorded in `docs/adr/0001-sidecar-schema-versioning-and-relation-freshness.md`.
+Sidecar versions 1, 2, and 3 are supported. Version 2 adds endpoint-based relation acknowledgement. Version 3 adds link reasons and binds acknowledgement to the reviewed `rel`, `to`, and `reason` values. The machine-readable contract is `docs/schema/sidecar.schema.json`; versioning, fingerprint, and reason decisions are recorded in `docs/adr/0001-sidecar-schema-versioning-and-relation-freshness.md` and `docs/adr/0002-link-reason-contract.md`.
 
 Links are written in one direction. Reverse links are generated for export and trace.
 
@@ -66,13 +66,7 @@ Traversal order is deterministic:
 
 `trace` defaults to `both` direction so a user can start from either the root document or the implementation resource.
 
-Trace output has three consumers:
-
-- AI agents and external tools use `--json` as the stable contract.
-- Humans use the default relation-oriented text output.
-- Existing scripts can request path-only output with `--format paths`.
-
-The JSON output keeps both the declaration direction and the traversal direction. Each non-start node records `from`, `to`, `rel`, `traversal`, and `depth` so an agent can distinguish a link written by the current file from a reverse traversal into the current file. Human output uses the same declared relation data and renders rows as `from --rel--> to`.
+Trace projections and display formats are defined in `docs/features/export-trace.md`. Machine-readable graph export fields are defined in `docs/schema/export.schema.json`.
 
 ## Plugin Model
 
@@ -92,52 +86,11 @@ The bundled plugin is `feature-trace`. It is embedded in the binary for the defa
 
 SQLite cache is a required feature but not required for every user workflow.
 
-The cache exists for:
-
-- repeated AI-agent queries
-- fast resource and link lookup
-- diagnostics inspection
-- external tooling integration
-
-The cache is always rebuildable from Git-backed declarations.
-
-Default path:
-
-```text
-._relaygraph/cache/relaygraph.sqlite
-```
-
-The cache has `metadata.cacheSchemaVersion = 1` and SQLite `PRAGMA user_version = 1`. Read commands verify integrity, required tables, required columns, required indexes, foreign keys, and version metadata. Missing, stale, incomplete, or corrupt caches are rejected with rebuild guidance.
+The cache is a rebuildable projection for repeated queries and tooling integration, never a source of truth. Its user-facing behavior is defined in `docs/features/cache.md`, and its machine-readable structure is defined in `docs/schema/cache-schema.sql`.
 
 ## CLI Surface
 
-```powershell
-relaygraph validate
-relaygraph validate --json
-relaygraph validate --strict
-relaygraph --help
-relaygraph help generate
-relaygraph init --dry-run
-relaygraph init
-relaygraph generate path:action.yml --kind source --link verified-by:path:tests/cli.rs
-relaygraph generate path:action.yml --dry-run
-relaygraph link add id:docs.root realized-by:id:src.main --path-hint
-relaygraph link update id:docs.root realized-by:id:src.main --new realized-by:id:tests.cli --path-hint
-relaygraph link remove id:docs.root realized-by:id:tests.cli
-relaygraph link acknowledge id:docs.root realized-by:id:src.main
-relaygraph export
-relaygraph trace id:docs.design.relaygraph
-relaygraph trace path:src/main.rs
-relaygraph cache rebuild
-relaygraph cache resources
-relaygraph cache links
-relaygraph cache trace path:src/main.rs
-relaygraph cache diagnostics
-```
-
-`generate` is a targeted authoring helper, not a relation inference engine. It creates exactly one sidecar for an explicit `path:` resource locator, writes a stable generated ID, and includes only the caller-provided `--kind` and `--link rel:locator` values. Before writing, it applies repository discovery, exclude, generated directory, plugin/config path, Git ignore, existing sidecar, symlink boundary, and plugin vocabulary checks.
-
-`link add`, `link remove`, and `link update` are targeted editing helpers for existing sidecars. They select the source resource by `id:<resource-id>` and accept link arguments in `rel:id:<target-id>` form so users do not need to edit sidecar paths or pass path locators for relation targets. `--path-hint` is a flag that writes or refreshes the derived `pathHint` from the resolved target ID.
+Command usage is documented in `README.md` and `docs/features/cli.md`. Sidecar versioning and link authoring decisions are recorded in `docs/adr/0001-sidecar-schema-versioning-and-relation-freshness.md` and `docs/adr/0002-link-reason-contract.md`.
 
 ## Source Layout
 

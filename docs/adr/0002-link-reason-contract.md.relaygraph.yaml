@@ -1,0 +1,24 @@
+schemaVersion: 3
+id: docs.adr.0002.link-reason-contract
+kind: design-doc
+links:
+  - rel: realized-by
+    to: id:src.model
+    pathHint: src/model.rs
+    reason: Defines reason and sidecar version contracts
+  - rel: realized-by
+    to: id:src.cache
+    pathHint: src/cache.rs
+    reason: Persists and projects link reasons
+  - rel: realized-by
+    to: id:src.link-edit
+    pathHint: src/link_edit.rs
+    reason: Implements reason editing and version transitions
+  - rel: verified-by
+    to: id:tests.cli
+    pathHint: tests/cli.rs
+    reason: Verifies CLI editing and projections
+  - rel: verified-by
+    to: id:tests.schema-contract
+    pathHint: tests/schema_contract.rs
+    reason: Verifies versioned schema contracts

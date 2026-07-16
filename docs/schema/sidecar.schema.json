@@ -7,7 +7,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "enum": [1, 2]
+      "enum": [1, 2, 3]
     },
     "id": {
       "type": "string",
@@ -38,6 +38,11 @@
             "type": "string",
             "pattern": "^(id:.*\\S.*|path:(?!.?:)(?![\\\\/])(?!.*[\\\\/]\\.\\.([\\\\/]|$))(?!\\.\\.([\\\\/]|$)).*\\S.*)$"
           },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "pathHint": {
             "type": "string",
             "pattern": "^(?!.?:)(?![\\\\/])(?!.*[\\\\/]\\.\\.([\\\\/]|$))(?!\\.\\.([\\\\/]|$)).*\\S.*$"
@@ -55,6 +60,10 @@
                 "pattern": "^sha256:[0-9a-f]{64}$"
               },
               "targetRevision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "linkRevision": {
                 "type": "string",
                 "pattern": "^sha256:[0-9a-f]{64}$"
               }
@@ -81,7 +90,80 @@
         "required": ["schemaVersion"],
         "properties": {
           "schemaVersion": {
+            "enum": [2, 3]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schemaVersion"],
+        "properties": {
+          "schemaVersion": {
             "const": 2
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "links": {
+            "items": {
+              "properties": {
+                "acknowledged": {
+                  "not": {
+                    "required": ["linkRevision"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schemaVersion"],
+        "properties": {
+          "schemaVersion": {
+            "const": 3
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "links": {
+            "items": {
+              "if": {
+                "required": ["acknowledged"]
+              },
+              "then": {
+                "properties": {
+                  "acknowledged": {
+                    "required": ["linkRevision"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["links"],
+        "properties": {
+          "links": {
+            "contains": {
+              "required": ["reason"]
+            }
+          }
+        }
+      },
+      "then": {
+        "required": ["schemaVersion"],
+        "properties": {
+          "schemaVersion": {
+            "const": 3
           }
         }
       }

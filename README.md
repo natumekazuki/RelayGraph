@@ -31,8 +31,9 @@ cargo run -- init --dry-run
 cargo run -- init
 cargo run -- generate path:action.yml --kind source --link verified-by:path:tests/cli.rs
 cargo run -- generate path:action.yml --dry-run
-cargo run -- link add id:docs.root realized-by:id:src.main --path-hint
-cargo run -- link update id:docs.root realized-by:id:src.main --new realized-by:id:tests.cli --path-hint
+cargo run -- link add id:docs.root realized-by:id:src.main --path-hint --reason "implements the design"
+cargo run -- link update id:docs.root realized-by:id:src.main --new realized-by:id:tests.cli --path-hint --reason "verified by the CLI test"
+cargo run -- link update id:docs.root realized-by:id:tests.cli --clear-reason
 cargo run -- link remove id:docs.root realized-by:id:tests.cli
 cargo run -- link acknowledge id:docs.root realized-by:id:src.main
 cargo run -- sync --dry-run
@@ -58,7 +59,7 @@ cargo run -- skill install --to .codex/skills
 
 `generate` creates one sidecar for an explicit `path:` resource locator. It refuses excluded, generated, plugin, config, undiscovered, symlinked, ignored, or already-sidecar-backed paths, and it only writes explicitly supplied `kind` and `--link rel:locator` entries.
 
-`link add`, `link remove`, and `link update` edit the `links` list for an existing resource selected by `id:<resource-id>`. Link arguments use `rel:id:<resource-id>` form; updates can replace the relation target with `--new`, set or refresh `pathHint` from the target ID with `--path-hint`, clear `pathHint`, and set or clear `order`. `link acknowledge` records the current source and target fingerprints in a sidecar version 2 relation. Each link command supports `--dry-run`.
+`link add`, `link remove`, and `link update` edit the `links` list for an existing resource selected by `id:<resource-id>`. Link arguments use `rel:id:<resource-id>` form; updates can replace the relation target with `--new`, set or refresh `pathHint` from the target ID with `--path-hint`, set or clear a non-blank link `reason`, clear `pathHint`, and set or clear `order`. Reasons are written as explicitly quoted YAML strings, including values such as `null`, `true`, and numeric-looking text. Setting a reason upgrades the edited sidecar to version 3 and migrates existing sibling acknowledgements by preserving endpoint revisions and adding `linkRevision`. Changing or removing a reason clears relation acknowledgement for that link. `link acknowledge` records the current source and target fingerprints; version 3 also records the reviewed `rel`, `to`, and `reason` fingerprint so direct sidecar edits become stale. It upgrades version 1 to version 2 while preserving version 3. Each link command supports `--dry-run`.
 
 `validate` reports changed acknowledged relations without failing. Use `validate --strict` when CI must fail until the relation is reviewed and acknowledged again. `sync` never updates acknowledgement.
 
@@ -92,7 +93,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 - Sidecars are optional unless matched by `requireSidecar`.
 - Locators support `id:` and `path:`.
 - Config and plugin `schemaVersion: 1` are supported.
-- Sidecar versions 1 and 2 are supported; version 2 enables explicit relation acknowledgement and freshness validation.
+- Sidecar versions 1, 2, and 3 are supported; version 2 enables explicit relation acknowledgement and version 3 adds link reasons.
 - Plugin relation order is used for deterministic traversal ordering.
 - `trace` defaults to `both` direction so generated reverse links are usable from any related resource.
-- Default trace output shows relation direction; `--json` is the structured AI/tooling contract and `--format paths` preserves path-only output.
+- Default trace output shows relation direction and declared reasons; `--json` is the structured AI/tooling contract and `--format paths` preserves path-only output.

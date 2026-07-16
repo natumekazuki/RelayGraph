@@ -331,6 +331,610 @@ fn link_commands_add_update_and_remove_existing_sidecar_links() {
 }
 
 #[test]
+fn link_commands_add_update_and_clear_reason() {
+    let root = temp_root("relaygraph-link-reason-edit");
+    create_fixture_repo(&root);
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/cli.rs"), "fn test() {}\n").unwrap();
+    fs::write(
+        root.join("tests/cli.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: tests.cli\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "verifies the CLI",
+        ],
+    ));
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    let added: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    assert_eq!(added["schemaVersion"], 3);
+    assert_eq!(added["links"][1]["reason"], "verifies the CLI");
+    let with_reason_comment = fs::read_to_string(&sidecar_path).unwrap().replace(
+        "reason: \"verifies the CLI\"",
+        "reason: \"verifies the CLI\" # keep reason comment",
+    );
+    fs::write(&sidecar_path, with_reason_comment).unwrap();
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+        ],
+    ));
+    let acknowledged: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    assert_eq!(acknowledged["schemaVersion"], 3);
+    assert!(acknowledged["links"][1]["acknowledged"].is_mapping());
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "verifies the CLI",
+        ],
+    ));
+    let unchanged_reason: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    assert!(unchanged_reason["links"][1]["acknowledged"].is_mapping());
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "covers CLI behavior",
+        ],
+    ));
+    let updated: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    assert_eq!(updated["links"][1]["reason"], "covers CLI behavior");
+    assert!(updated["links"][1]["acknowledged"].is_null());
+    assert!(fs::read_to_string(&sidecar_path)
+        .unwrap()
+        .contains("reason: \"covers CLI behavior\" # keep reason comment"));
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--clear-reason",
+        ],
+    ));
+    let cleared_text = fs::read_to_string(&sidecar_path).unwrap();
+    let cleared: serde_yaml::Value = serde_yaml::from_str(&cleared_text).unwrap();
+    assert_eq!(cleared["schemaVersion"], 3);
+    assert!(cleared["links"][1]["reason"].is_null());
+
+    let invalid = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "   ",
+        ],
+    );
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("link.reason must not be empty"));
+    assert_eq!(fs::read_to_string(&sidecar_path).unwrap(), cleared_text);
+
+    let conflicting = run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "restored",
+            "--clear-reason",
+        ],
+    );
+    assert!(!conflicting.status.success());
+    assert!(String::from_utf8_lossy(&conflicting.stderr)
+        .contains("--reason and --clear-reason cannot be used together"));
+    assert_eq!(fs::read_to_string(&sidecar_path).unwrap(), cleared_text);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_add_reason_migrates_all_v2_sibling_acknowledgements_to_v3() {
+    let root = temp_root("relaygraph-link-add-reason-v3-migration");
+    create_v2_acknowledged_sibling_repo(&root);
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    rewrite_v2_links_with_acknowledgement_first(&sidecar_path);
+    let before = fs::read_to_string(&sidecar_path).unwrap();
+    let before_sidecar: serde_yaml::Value = serde_yaml::from_str(&before).unwrap();
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "verifies the migration",
+            "--dry-run",
+        ],
+    ));
+    assert_eq!(fs::read_to_string(&sidecar_path).unwrap(), before);
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "add",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "verifies the migration",
+        ],
+    ));
+    let migrated: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    assert_eq!(migrated["schemaVersion"], 3);
+    for index in 0..2 {
+        assert_eq!(
+            migrated["links"][index]["acknowledged"]["sourceRevision"],
+            before_sidecar["links"][index]["acknowledged"]["sourceRevision"]
+        );
+        assert_eq!(
+            migrated["links"][index]["acknowledged"]["targetRevision"],
+            before_sidecar["links"][index]["acknowledged"]["targetRevision"]
+        );
+        assert!(migrated["links"][index]["acknowledged"]["linkRevision"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
+    }
+    assert_eq!(migrated["links"][2]["reason"], "verifies the migration");
+    assert!(migrated["links"][2]["acknowledged"].is_null());
+    let migrated_text = fs::read_to_string(&sidecar_path).unwrap();
+    assert!(migrated_text.contains("# keep flow acknowledgement comment"));
+    assert!(migrated_text.contains("# keep acknowledgement comment 2"));
+    assert_success(run(&root, ["validate", "--strict"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_update_reason_migrates_siblings_and_clears_only_the_changed_acknowledgement() {
+    let root = temp_root("relaygraph-link-update-reason-v3-migration");
+    create_v2_acknowledged_sibling_repo(&root);
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    assert_success(run(
+        &root,
+        ["link", "add", "id:docs.root", "realized-by:id:tests.cli"],
+    ));
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+        ],
+    ));
+    rewrite_v2_links_with_acknowledgement_first(&sidecar_path);
+    let before = fs::read_to_string(&sidecar_path).unwrap();
+    let before_sidecar: serde_yaml::Value = serde_yaml::from_str(&before).unwrap();
+    assert_eq!(before_sidecar["schemaVersion"], 2);
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:tests.cli",
+            "--reason",
+            "verifies the migration",
+        ],
+    ));
+    let migrated: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    assert_eq!(migrated["schemaVersion"], 3);
+    for index in 0..2 {
+        assert_eq!(
+            migrated["links"][index]["acknowledged"]["sourceRevision"],
+            before_sidecar["links"][index]["acknowledged"]["sourceRevision"]
+        );
+        assert_eq!(
+            migrated["links"][index]["acknowledged"]["targetRevision"],
+            before_sidecar["links"][index]["acknowledged"]["targetRevision"]
+        );
+        assert!(migrated["links"][index]["acknowledged"]["linkRevision"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
+    }
+    assert_eq!(migrated["links"][2]["reason"], "verifies the migration");
+    assert!(migrated["links"][2]["acknowledged"].is_null());
+    let migrated_text = fs::read_to_string(&sidecar_path).unwrap();
+    assert!(migrated_text.contains("# keep flow acknowledgement comment"));
+    assert!(migrated_text.contains("# keep acknowledgement comment 2"));
+    assert!(!migrated_text.contains("# keep acknowledgement comment 3"));
+    assert_success(run(&root, ["validate", "--strict"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_reason_writes_yaml_strings_without_implicit_type_changes() {
+    let root = temp_root("relaygraph-link-reason-yaml-types");
+    create_fixture_repo(&root);
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    fs::write(
+        &sidecar_path,
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n",
+    )
+    .unwrap();
+
+    for reason in ["null", "true", "123", "1.5"] {
+        assert_success(run(
+            &root,
+            [
+                "link",
+                "update",
+                "id:docs.root",
+                "realized-by:id:src.main",
+                "--reason",
+                reason,
+            ],
+        ));
+        let text = fs::read_to_string(&sidecar_path).unwrap();
+        let sidecar: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+        assert_eq!(sidecar["links"][0]["reason"], reason);
+        assert!(text.contains(&format!("reason: \"{reason}\"")));
+        assert_success(run(&root, ["validate"]));
+    }
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_reason_update_and_clear_replace_the_entire_yaml_field() {
+    let root = temp_root("relaygraph-link-reason-block-scalar");
+    create_fixture_repo(&root);
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    let block_scalar = "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - reason: |\n      first line\n      second line\n    # keep link comment\n    rel: realized-by\n    to: id:src.main\n    order: 7\n";
+    fs::write(&sidecar_path, block_scalar).unwrap();
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--reason",
+            "replacement\nreason",
+        ],
+    ));
+    let updated_text = fs::read_to_string(&sidecar_path).unwrap();
+    let updated: serde_yaml::Value = serde_yaml::from_str(&updated_text).unwrap();
+    assert_eq!(updated["links"][0]["reason"], "replacement\nreason");
+    assert_eq!(updated["links"][0]["rel"], "realized-by");
+    assert_eq!(updated["links"][0]["order"], 7);
+    assert!(!updated_text.contains("first line"));
+    assert!(!updated_text.contains("second line"));
+    assert!(updated_text.contains("# keep link comment"));
+    assert_success(run(&root, ["validate"]));
+
+    fs::write(&sidecar_path, block_scalar).unwrap();
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--clear-reason",
+            "--order",
+            "8",
+        ],
+    ));
+    let cleared_text = fs::read_to_string(&sidecar_path).unwrap();
+    let cleared: serde_yaml::Value = serde_yaml::from_str(&cleared_text).unwrap();
+    assert!(cleared["links"][0]["reason"].is_null());
+    assert_eq!(cleared["links"][0]["rel"], "realized-by");
+    assert_eq!(cleared["links"][0]["to"], "id:src.main");
+    assert_eq!(cleared["links"][0]["order"], 8);
+    assert!(!cleared_text.contains("first line"));
+    assert!(!cleared_text.contains("second line"));
+    assert!(cleared_text.contains("# keep link comment"));
+    assert_success(run(&root, ["validate"]));
+
+    fs::write(&sidecar_path, block_scalar).unwrap();
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "update",
+            "id:docs.root",
+            "realized-by:id:src.main",
+            "--clear-reason",
+            "--clear-order",
+        ],
+    ));
+    let cleared_order_text = fs::read_to_string(&sidecar_path).unwrap();
+    let cleared_order: serde_yaml::Value = serde_yaml::from_str(&cleared_order_text).unwrap();
+    assert!(cleared_order["links"][0]["reason"].is_null());
+    assert!(cleared_order["links"][0]["order"].is_null());
+    assert_eq!(cleared_order["links"][0]["rel"], "realized-by");
+    assert!(cleared_order_text.contains("# keep link comment"));
+    assert_success(run(&root, ["validate"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_reason_propagates_through_export_trace_and_cache() {
+    let root = temp_root("relaygraph-link-reason-projection");
+    create_fixture_repo(&root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: path:src/main.rs\n    reason: loads the implementation\n  - rel: realized-by\n    to: path:src/second.rs\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/second.rs"), "fn second() {}\n").unwrap();
+    fs::write(
+        root.join("src/second.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: src.second\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+
+    assert_success(run(&root, ["validate"]));
+    assert_success_with_lines(
+        run(&root, ["trace", "path:src/main.rs"]),
+        &[
+            "src/main.rs",
+            "docs/root.md --realized-by--> src/main.rs reason=\"loads the implementation\"",
+            "docs/root.md --realized-by--> src/second.rs",
+        ],
+    );
+    let trace = run(&root, ["trace", "path:src/main.rs", "--json"]);
+    assert!(
+        trace.status.success(),
+        "trace failed: {}",
+        String::from_utf8_lossy(&trace.stderr)
+    );
+    let trace: serde_json::Value = serde_json::from_slice(&trace.stdout).unwrap();
+    assert_eq!(
+        trace["nodes"][1]["via"]["reason"],
+        "loads the implementation"
+    );
+    let trace_without_reason = run(&root, ["trace", "path:src/second.rs", "--json"]);
+    assert!(trace_without_reason.status.success());
+    let trace_without_reason: serde_json::Value =
+        serde_json::from_slice(&trace_without_reason.stdout).unwrap();
+    assert!(trace_without_reason["nodes"][1]["via"]["reason"].is_null());
+
+    let export_path = root.join("export.json");
+    let export = run(&root, ["export", "--output", export_path.to_str().unwrap()]);
+    assert!(export.status.success());
+    let export: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(export_path).unwrap()).unwrap();
+    assert_eq!(
+        export["resources"][0]["links"][0]["reason"],
+        "loads the implementation"
+    );
+    assert_eq!(
+        export["resources"][1]["incomingLinks"][0]["reason"],
+        "loads the implementation"
+    );
+    assert!(export["resources"][0]["links"][1]["reason"].is_null());
+
+    let cache_path = root.join("relaygraph.sqlite");
+    assert_success(run(
+        &root,
+        ["cache", "rebuild", "--output", cache_path.to_str().unwrap()],
+    ));
+    let links = run(
+        &root,
+        [
+            "cache",
+            "links",
+            "--db",
+            cache_path.to_str().unwrap(),
+            "--json",
+        ],
+    );
+    assert!(links.status.success());
+    let links: serde_json::Value = serde_json::from_slice(&links.stdout).unwrap();
+    assert_eq!(links[0]["reason"], "loads the implementation");
+    assert!(links[1]["reason"].is_null());
+
+    let cache_trace = run(
+        &root,
+        [
+            "cache",
+            "trace",
+            "--db",
+            cache_path.to_str().unwrap(),
+            "path:src/main.rs",
+            "--json",
+        ],
+    );
+    assert!(cache_trace.status.success());
+    let cache_trace: serde_json::Value = serde_json::from_slice(&cache_trace.stdout).unwrap();
+    assert_eq!(
+        cache_trace["nodes"][1]["via"]["reason"],
+        "loads the implementation"
+    );
+    let cache_trace_without_reason = run(
+        &root,
+        [
+            "cache",
+            "trace",
+            "--db",
+            cache_path.to_str().unwrap(),
+            "path:src/second.rs",
+            "--json",
+        ],
+    );
+    assert!(cache_trace_without_reason.status.success());
+    let cache_trace_without_reason: serde_json::Value =
+        serde_json::from_slice(&cache_trace_without_reason.stdout).unwrap();
+    assert!(cache_trace_without_reason["nodes"][1]["via"]["reason"].is_null());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn link_reason_requires_sidecar_v3_and_non_blank_text() {
+    let root = temp_root("relaygraph-link-reason-validation");
+    create_fixture_repo(&root);
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+
+    fs::write(
+        &sidecar_path,
+        "schemaVersion: 2\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: path:src/main.rs\n    reason: loads the implementation\n",
+    )
+    .unwrap();
+    let wrong_version = run(&root, ["validate"]);
+    assert!(!wrong_version.status.success());
+    assert!(String::from_utf8_lossy(&wrong_version.stdout)
+        .contains("link.reason requires sidecar schemaVersion 3"));
+
+    fs::write(
+        &sidecar_path,
+        "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: path:src/main.rs\n    reason: '   '\n",
+    )
+    .unwrap();
+    let blank = run(&root, ["validate"]);
+    assert!(!blank.status.success());
+    assert!(String::from_utf8_lossy(&blank.stdout).contains("link.reason must not be empty"));
+
+    let revision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    fs::write(
+        &sidecar_path,
+        format!(
+            "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    reason: \"loads the implementation\"\n    acknowledged:\n      sourceRevision: {revision}\n      targetRevision: {revision}\n"
+        ),
+    )
+    .unwrap();
+    let missing_link_revision = run(&root, ["validate"]);
+    assert!(!missing_link_revision.status.success());
+    assert!(String::from_utf8_lossy(&missing_link_revision.stdout)
+        .contains("link.acknowledged.linkRevision is required in sidecar schemaVersion 3"));
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    let repaired_v3 = fs::read_to_string(&sidecar_path).unwrap();
+    assert!(repaired_v3.contains("linkRevision: sha256:"));
+    assert_success(run(&root, ["validate", "--strict"]));
+
+    fs::write(
+        &sidecar_path,
+        format!(
+            "schemaVersion: 2\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    acknowledged:\n      sourceRevision: {revision}\n      targetRevision: {revision}\n      linkRevision: {revision}\n"
+        ),
+    )
+    .unwrap();
+    let v2_link_revision = run(&root, ["validate"]);
+    assert!(!v2_link_revision.status.success());
+    assert!(String::from_utf8_lossy(&v2_link_revision.stdout)
+        .contains("link.acknowledged.linkRevision requires sidecar schemaVersion 3"));
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    let repaired_v2 = fs::read_to_string(&sidecar_path).unwrap();
+    assert!(!repaired_v2.contains("linkRevision:"));
+    assert_success(run(&root, ["validate", "--strict"]));
+
+    fs::write(
+        &sidecar_path,
+        format!(
+            "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    reason: \"loads the implementation\"\n    acknowledged:\n      sourceRevision: {revision}\n      targetRevision: {revision}\n      linkRevision: sha256:short\n"
+        ),
+    )
+    .unwrap();
+    let invalid_before = fs::read_to_string(&sidecar_path).unwrap();
+    let invalid_revision = run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    );
+    assert!(!invalid_revision.status.success());
+    assert!(String::from_utf8_lossy(&invalid_revision.stderr)
+        .contains("link.acknowledged.linkRevision must be sha256"));
+    assert_eq!(fs::read_to_string(&sidecar_path).unwrap(), invalid_before);
+
+    fs::write(root.join("src/second.rs"), "fn second() {}\n").unwrap();
+    fs::write(
+        root.join("src/second.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: src.second\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    fs::write(
+        &sidecar_path,
+        format!(
+            "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    acknowledged:\n      sourceRevision: {revision}\n      targetRevision: {revision}\n      linkRevision: {revision}\n  - rel: realized-by\n    to: id:src.second\n    acknowledged:\n      sourceRevision: {revision}\n      targetRevision: {revision}\n"
+        ),
+    )
+    .unwrap();
+    let sibling_before = fs::read_to_string(&sidecar_path).unwrap();
+    let sibling_shape_error = run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    );
+    assert!(!sibling_shape_error.status.success());
+    assert!(String::from_utf8_lossy(&sibling_shape_error.stderr)
+        .contains("link.acknowledged.linkRevision is required"));
+    assert_eq!(fs::read_to_string(&sidecar_path).unwrap(), sibling_before);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn relation_freshness_acknowledge_and_validate_distinguish_changed_endpoints() {
     let root = temp_root("relaygraph-relation-freshness");
     create_fixture_repo(&root);
@@ -426,6 +1030,177 @@ fn relation_freshness_acknowledge_and_validate_distinguish_changed_endpoints() {
 }
 
 #[test]
+fn relation_freshness_detects_a_manually_changed_link_reason() {
+    let root = temp_root("relaygraph-relation-freshness-link-reason");
+    create_fixture_repo(&root);
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    fs::write(
+        &sidecar_path,
+        "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    reason: \"original reason\"\n",
+    )
+    .unwrap();
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    let acknowledged_text = fs::read_to_string(&sidecar_path).unwrap();
+    assert!(acknowledged_text.contains("linkRevision: sha256:"));
+    fs::write(
+        &sidecar_path,
+        acknowledged_text.replace("original reason", "manually changed reason"),
+    )
+    .unwrap();
+
+    let validate = run(&root, ["validate", "--json"]);
+    assert!(validate.status.success());
+    let diagnostics: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
+    assert_eq!(diagnostics[0]["code"], "relation-review-required");
+    assert_eq!(diagnostics[0]["state"], "linkChanged");
+    assert_ne!(
+        diagnostics[0]["relation"]["acknowledgedRevision"],
+        diagnostics[0]["relation"]["currentRevision"]
+    );
+
+    let strict = run(&root, ["validate", "--strict"]);
+    assert!(!strict.status.success());
+    assert!(String::from_utf8_lossy(&strict.stdout).contains("link revision changed"));
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    assert_success(run(&root, ["validate", "--strict"]));
+
+    fs::write(root.join("docs/root.md"), "# Source changed\n").unwrap();
+    let source_and_link_text = fs::read_to_string(&sidecar_path)
+        .unwrap()
+        .replace("manually changed reason", "source and link changed");
+    fs::write(&sidecar_path, source_and_link_text).unwrap();
+    let source_and_link = run(&root, ["validate", "--json"]);
+    assert!(source_and_link.status.success());
+    let diagnostics: serde_json::Value = serde_json::from_slice(&source_and_link.stdout).unwrap();
+    assert_eq!(diagnostics[0]["state"], "sourceAndLinkChanged");
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    fs::write(root.join("src/main.rs"), "fn changed() {}\n").unwrap();
+    let target_and_link_text = fs::read_to_string(&sidecar_path)
+        .unwrap()
+        .replace("source and link changed", "target and link changed");
+    fs::write(&sidecar_path, target_and_link_text).unwrap();
+    let target_and_link = run(&root, ["validate", "--json"]);
+    assert!(target_and_link.status.success());
+    let diagnostics: serde_json::Value = serde_json::from_slice(&target_and_link.stdout).unwrap();
+    assert_eq!(diagnostics[0]["state"], "targetAndLinkChanged");
+
+    fs::write(root.join("docs/root.md"), "# Source changed again\n").unwrap();
+    let all_changed = run(&root, ["validate", "--json"]);
+    assert!(all_changed.status.success());
+    let diagnostics: serde_json::Value = serde_json::from_slice(&all_changed.stdout).unwrap();
+    assert_eq!(diagnostics[0]["state"], "allChanged");
+
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+
+    let reacknowledged_text = fs::read_to_string(&sidecar_path).unwrap();
+    let without_reason = reacknowledged_text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("reason:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(&sidecar_path, without_reason).unwrap();
+    let cleared = run(&root, ["validate", "--json"]);
+    assert!(cleared.status.success());
+    let diagnostics: serde_json::Value = serde_json::from_slice(&cleared.stdout).unwrap();
+    assert_eq!(diagnostics[0]["state"], "linkChanged");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn relation_freshness_tracks_target_identity_in_v3_and_preserves_v2_behavior() {
+    let root = temp_root("relaygraph-relation-freshness-target-identity");
+    create_fixture_repo(&root);
+    fs::write(root.join("src/second.rs"), "fn main() {}\n").unwrap();
+    fs::write(
+        root.join("src/second.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: src.second\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    let sidecar_path = root.join("docs/root.md.relaygraph.yaml");
+    fs::write(
+        &sidecar_path,
+        "schemaVersion: 3\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n    reason: \"selects the implementation\"\n",
+    )
+    .unwrap();
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    let changed_target = fs::read_to_string(&sidecar_path)
+        .unwrap()
+        .replace("id:src.main", "id:src.second");
+    fs::write(&sidecar_path, changed_target).unwrap();
+    let v3 = run(&root, ["validate", "--json"]);
+    assert!(v3.status.success());
+    let diagnostics: serde_json::Value = serde_json::from_slice(&v3.stdout).unwrap();
+    assert_eq!(diagnostics[0]["state"], "linkChanged");
+
+    fs::write(
+        &sidecar_path,
+        "schemaVersion: 2\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n",
+    )
+    .unwrap();
+    assert_success(run(
+        &root,
+        [
+            "link",
+            "acknowledge",
+            "id:docs.root",
+            "realized-by:id:src.main",
+        ],
+    ));
+    let changed_v2_target = fs::read_to_string(&sidecar_path)
+        .unwrap()
+        .replace("id:src.main", "id:src.second");
+    fs::write(&sidecar_path, changed_v2_target).unwrap();
+    assert_success(run(&root, ["validate", "--strict"]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn relation_freshness_does_not_replace_unresolved_target_diagnostics() {
     let root = temp_root("relaygraph-relation-freshness-missing-target");
     create_fixture_repo(&root);
@@ -494,7 +1269,7 @@ fn relation_freshness_requires_sidecar_v2_and_link_update_clears_acknowledgement
     let invalid_v1 = run(&root, ["validate"]);
     assert!(!invalid_v1.status.success());
     assert!(String::from_utf8_lossy(&invalid_v1.stdout)
-        .contains("acknowledged requires sidecar schemaVersion 2"));
+        .contains("acknowledged requires sidecar schemaVersion 2 or 3"));
 
     fs::write(
         root.join("docs/root.md.relaygraph.yaml"),
@@ -3060,6 +3835,79 @@ traversal:
         "schemaVersion: 1\nid: src.main\nkind: source\nlinks: []\n",
     )
     .unwrap();
+}
+
+fn create_v2_acknowledged_sibling_repo(root: &Path) {
+    create_fixture_repo(root);
+    fs::write(
+        root.join("docs/root.md.relaygraph.yaml"),
+        "schemaVersion: 1\nid: docs.root\nkind: feature-root\nlinks:\n  - rel: realized-by\n    to: id:src.main\n  - rel: realized-by\n    to: id:src.second\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/second.rs"), "fn second() {}\n").unwrap();
+    fs::write(
+        root.join("src/second.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: src.second\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/cli.rs"), "fn test() {}\n").unwrap();
+    fs::write(
+        root.join("tests/cli.rs.relaygraph.yaml"),
+        "schemaVersion: 1\nid: tests.cli\nkind: source\nlinks: []\n",
+    )
+    .unwrap();
+    for target in ["src.main", "src.second"] {
+        assert_success(run(
+            root,
+            [
+                "link",
+                "acknowledge",
+                "id:docs.root",
+                &format!("realized-by:id:{target}"),
+            ],
+        ));
+    }
+    let sidecar: serde_yaml::Value = serde_yaml::from_str(
+        &fs::read_to_string(root.join("docs/root.md.relaygraph.yaml")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(sidecar["schemaVersion"], 2);
+    assert!(sidecar["links"][0]["acknowledged"]["linkRevision"].is_null());
+    assert!(sidecar["links"][1]["acknowledged"]["linkRevision"].is_null());
+}
+
+fn rewrite_v2_links_with_acknowledgement_first(sidecar_path: &Path) {
+    let sidecar: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(sidecar_path).unwrap()).unwrap();
+    let links = sidecar["links"].as_sequence().unwrap();
+    let mut rewritten = format!(
+        "schemaVersion: 2\nid: {}\nkind: {}\nlinks:\n",
+        sidecar["id"].as_str().unwrap(),
+        sidecar["kind"].as_str().unwrap()
+    );
+    for (index, link) in links.iter().enumerate() {
+        let acknowledged = &link["acknowledged"];
+        if index == 0 {
+            rewritten.push_str(&format!(
+                "  - acknowledged: {{ sourceRevision: {}, targetRevision: {} }} # keep flow acknowledgement comment\n    rel: {}\n    to: {}\n",
+                acknowledged["sourceRevision"].as_str().unwrap(),
+                acknowledged["targetRevision"].as_str().unwrap(),
+                link["rel"].as_str().unwrap(),
+                link["to"].as_str().unwrap(),
+            ));
+        } else {
+            rewritten.push_str(&format!(
+                "  - acknowledged:\n      sourceRevision: {}\n      # keep acknowledgement comment {}\n      targetRevision: {}\n    rel: {}\n    to: {}\n",
+                acknowledged["sourceRevision"].as_str().unwrap(),
+                index + 1,
+                acknowledged["targetRevision"].as_str().unwrap(),
+                link["rel"].as_str().unwrap(),
+                link["to"].as_str().unwrap(),
+            ));
+        }
+    }
+    fs::write(sidecar_path, rewritten).unwrap();
 }
 
 fn create_relation_order_fixture_repo(root: &Path) {

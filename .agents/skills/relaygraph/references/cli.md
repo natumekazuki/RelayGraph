@@ -68,13 +68,16 @@ relaygraph sync
 Use when adding, removing, or updating outgoing links on an existing sidecar-backed resource. Select the source resource by stable ID and use target IDs for link arguments; do not pass sidecar file paths or `path:` link targets.
 
 ```bash
-relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint
-relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint
+relaygraph link add id:docs.feature.example realized-by:id:src.example --path-hint --reason "implements the feature"
+relaygraph link update id:docs.feature.example realized-by:id:src.old --new realized-by:id:src.example --path-hint --reason "uses the replacement"
+relaygraph link update id:docs.feature.example realized-by:id:src.example --clear-reason
 relaygraph link remove id:docs.feature.example realized-by:id:src.example
 relaygraph link acknowledge id:docs.feature.example realized-by:id:src.example
 ```
 
-`--path-hint` is a flag. It writes or refreshes `pathHint` from the resolved target ID. `--clear-path-hint` removes an existing hint. Use `--order <N>` or `--clear-order` when traversal order must be explicit. `link acknowledge` records SHA-256 fingerprints for both endpoint files and upgrades the edited sidecar to schema version 2.
+`--path-hint` writes or refreshes `pathHint` from the resolved target ID. `--clear-path-hint` removes an existing hint. `--reason <text>` sets a non-blank, explicitly quoted YAML string and upgrades the edited sidecar to schema version 3; existing sibling acknowledgements keep their endpoint revisions and gain `linkRevision`. `--clear-reason` removes the field without downgrading the sidecar. Existing multiline reason fields are replaced or removed as a whole. Changing or removing a reason clears existing acknowledgement for that link. Use `--order <N>` or `--clear-order` when traversal order must be explicit. `link acknowledge` records SHA-256 fingerprints for both endpoint files; version 3 also records a fingerprint of `rel`, `to`, and `reason`. It upgrades version 1 to version 2 while preserving version 3.
+
+`link acknowledge` may repair only version-specific `linkRevision` shape errors on the selected source sidecar: a missing version 3 value or an extra version 2 value. Invalid revisions and unrelated schema errors remain blocking.
 
 ### Acknowledged Relation Review Workflow
 
@@ -93,7 +96,7 @@ relaygraph link acknowledge id:source.a documented-by:id:docs.b
 relaygraph validate --strict
 ```
 
-Use the relation configured by the repository in place of `documented-by`. If only the target changes, the diagnostic state is `targetChanged`; if both endpoints change, it is `bothChanged`. Do not acknowledge merely to make CI pass: acknowledgement records that a person or trusted workflow reviewed the current endpoint contents together. `sync` never performs this review or updates acknowledged revisions.
+Use the relation configured by the repository in place of `documented-by`. If only the target changes, the diagnostic state is `targetChanged`; if both endpoints change, it is `bothChanged`. A direct version 3 edit to `rel`, `to`, or `reason` produces `linkChanged`, combined with endpoint states when applicable. Do not acknowledge merely to make CI pass: acknowledgement records that a person or trusted workflow reviewed the current endpoints and link meaning together. `sync` never performs this review or updates acknowledged revisions.
 
 ## Cache
 

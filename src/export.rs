@@ -37,6 +37,7 @@ pub struct ExportResource {
 pub struct ExportLink {
     pub rel: String,
     pub to: String,
+    pub reason: Option<String>,
     pub path_hint: Option<String>,
     pub target_path: Option<String>,
     pub target_id: Option<String>,
@@ -49,6 +50,7 @@ pub struct ExportIncomingLink {
     pub from_path: String,
     pub from_id: Option<String>,
     pub rel: String,
+    pub reason: Option<String>,
     pub order: Option<i64>,
 }
 
@@ -65,6 +67,7 @@ pub fn to_export(graph: BuildResult) -> ExportGraph {
                         from_path: resource.path.clone(),
                         from_id: resource.id.clone(),
                         rel: link.rel.clone(),
+                        reason: link.reason.clone(),
                         order: link.order,
                     });
             }
@@ -111,6 +114,7 @@ pub fn to_export(graph: BuildResult) -> ExportGraph {
                         .map(|link| ExportLink {
                             rel: link.rel,
                             to: link.to,
+                            reason: link.reason,
                             path_hint: link.path_hint,
                             target_path: link.target_path,
                             target_id: link.target_id,

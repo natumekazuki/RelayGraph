@@ -63,10 +63,11 @@
     "link": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rel", "to", "pathHint", "targetPath", "targetId", "order"],
+      "required": ["rel", "to", "reason", "pathHint", "targetPath", "targetId", "order"],
       "properties": {
         "rel": { "type": "string" },
         "to": { "type": "string" },
+        "reason": { "type": ["string", "null"] },
         "pathHint": { "type": ["string", "null"] },
         "targetPath": { "type": ["string", "null"] },
         "targetId": { "type": ["string", "null"] },
@@ -76,11 +77,12 @@
     "incomingLink": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fromPath", "fromId", "rel", "order"],
+      "required": ["fromPath", "fromId", "rel", "reason", "order"],
       "properties": {
         "fromPath": { "type": "string" },
         "fromId": { "type": ["string", "null"] },
         "rel": { "type": "string" },
+        "reason": { "type": ["string", "null"] },
         "order": { "type": ["integer", "null"] }
       }
     },

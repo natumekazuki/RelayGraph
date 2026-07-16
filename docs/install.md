@@ -158,7 +158,7 @@ git tag $tag
 git push origin $tag
 ```
 
-Then run the manual `Release` workflow with the same tag, for example `v1.2.0`.
+Then run the manual `Release` workflow with the same tag, for example `v1.3.0`.
 The workflow verifies tag format, tag checkout integrity, and equality with the `Cargo.toml` package version before building or publishing artifacts.
 
 When direct pushes to `master` are disabled, release changes go through a normal

@@ -8,12 +8,14 @@ Responsibilities:
 - Store resources, links, plugins, metadata, and diagnostics.
 - Reject missing, stale, incomplete, or corrupt cache reads with rebuild guidance.
 - Provide cache-backed resource, link, trace, and diagnostic commands.
+- Preserve optional link reasons in cache-backed link and trace projections.
 
 Implementation:
 
 - `src/cache.rs` owns SQLite schema writes and cache read commands.
 - `docs/schema/cache-schema.sql` documents the cache contract.
 - Cache reads verify `cacheSchemaVersion`, SQLite `user_version`, integrity, required tables, columns, indexes, and foreign keys.
+- Cache schema version 2 adds `links.reason`; older caches are rejected with rebuild guidance instead of being migrated.
 
 Validation:
 

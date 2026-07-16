@@ -6,17 +6,17 @@ links:
     to: id:src.freshness
     pathHint: src/freshness.rs
     acknowledged:
-      sourceRevision: sha256:c576e30e0694799fdb9062de830ccbba814b14009aa14cf978c2493a31e23bfa
-      targetRevision: sha256:c80d54728d057b873379dd4b1fd0736d941ea96319dd1d12424637d81622893f
+      sourceRevision: sha256:7339bf1cf27954277f7525997d206beca34571975686e9b5b75525ba40b5cc83
+      targetRevision: sha256:4c8bce3d931658552b67320e2d87232feabf6e451f46b485afccfbfeb70e42be
   - rel: verified-by
     to: id:tests.cli
     pathHint: tests/cli.rs
     acknowledged:
-      sourceRevision: sha256:c576e30e0694799fdb9062de830ccbba814b14009aa14cf978c2493a31e23bfa
-      targetRevision: sha256:56da9bdd16a91a8997aac870519c7f82f5afa5667fa36c1f7d7007907c186c7b
+      sourceRevision: sha256:7339bf1cf27954277f7525997d206beca34571975686e9b5b75525ba40b5cc83
+      targetRevision: sha256:333ca31555ab3975bf6f2e9f2d0821bad70a6b0e5251fdb962770353bfa1fd1a
   - rel: verified-by
     to: id:tests.schema-contract
     pathHint: tests/schema_contract.rs
     acknowledged:
-      sourceRevision: sha256:c576e30e0694799fdb9062de830ccbba814b14009aa14cf978c2493a31e23bfa
-      targetRevision: sha256:121f11bf79543eb79ed4146f7b988be997b8322530b92c0f5d77362ead8b5d7f
+      sourceRevision: sha256:7339bf1cf27954277f7525997d206beca34571975686e9b5b75525ba40b5cc83
+      targetRevision: sha256:b431f8b8c20c27061ec9001d851dc7c05e0ffa871204f99eb599f02e5baa8f9b
